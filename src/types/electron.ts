@@ -3,6 +3,8 @@ import type {
   AdjustVolumeRequest,
   GetLastFrameRequest,
   MergeVideosRequest,
+  UpscaleRequest,
+  RenderProgressUpdate,
   AddMusicRequest,
   ExportRequest,
   ProcessResult,
@@ -44,10 +46,11 @@ export interface ElectronAPI {
   adjustVolume: (request: AdjustVolumeRequest) => Promise<ProcessResult>
   getLastFrame: (request: GetLastFrameRequest) => Promise<ProcessResult>
   mergeVideos: (request: MergeVideosRequest) => Promise<ProcessResult>
+  upscaleVideo: (request: UpscaleRequest) => Promise<ProcessResult>
   addMusic: (request: AddMusicRequest) => Promise<ProcessResult>
   exportVideo: (request: ExportRequest) => Promise<ProcessResult>
   
-  onRenderProgress: (callback: (progress: number) => void) => void
+  onRenderProgress: (callback: (update: RenderProgressUpdate) => void) => void
   onRenderComplete: (callback: () => void) => void
   onRenderError: (callback: (error: string) => void) => void
 }

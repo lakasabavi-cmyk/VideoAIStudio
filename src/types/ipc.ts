@@ -45,6 +45,27 @@ export interface MergeVideosRequest {
   outputPath: string
 }
 
+export interface UpscaleRequest {
+  videoPath: string
+  outputPath: string
+  method: 'lanczos' | 'realesrgan'
+  /** Lanczos: target height in pixels (1080, 1440, 2160, 4320). */
+  targetHeight?: number
+  /** Real-ESRGAN: scale factor and model name for the ncnn binary. */
+  scale?: number
+  model?: string
+  exePath?: string
+  modelsPath?: string
+  /** Optional RIFE interpolation stage (runs before the upscale). */
+  rife?: { exePath: string; modelPath: string; multiplier: number }
+}
+
+/** Progress event payload; stage is set by multi-stage jobs. */
+export interface RenderProgressUpdate {
+  progress: number
+  stage?: string
+}
+
 export interface AddMusicRequest {
   videoPath: string
   musicPath: string

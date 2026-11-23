@@ -31,6 +31,24 @@ export interface ProjectSettings {
   originalVolume: number
   exportFormat: 'mp4' | 'webm' | 'mov'
   exportQuality: 'low' | 'medium' | 'high'
+  /** Upscale method: quick Lanczos scaling or Real-ESRGAN. */
+  upscaleMethod: 'lanczos' | 'realesrgan'
+  /** Lanczos target resolution (output height follows the label). */
+  lanczosTarget: '1080p' | '2k' | '4k' | '8k'
+  /** Real-ESRGAN scale factor; the model follows from it. */
+  esrganScale: 2 | 3 | 4
+  /** Path to the realesrgan-ncnn-vulkan executable. */
+  esrganPath: string
+  /** Folder with the Real-ESRGAN model files (blank = "models" next to the executable). */
+  esrganModelsPath: string
+  /** Run RIFE frame interpolation inside the Real-ESRGAN pipeline. */
+  rifeEnabled: boolean
+  /** RIFE frame-rate multiplier (2 = double fps, 4 = quadruple). */
+  rifeMultiplier: 2 | 4
+  /** Path to the rife-ncnn-vulkan executable. */
+  rifePath: string
+  /** RIFE model folder (blank = "rife-v4.6" next to the executable). */
+  rifeModelPath: string
 }
 
 export type RenderJobKind =
@@ -40,6 +58,7 @@ export type RenderJobKind =
   | 'adjust-volume'
   | 'get-last-frame'
   | 'merge'
+  | 'upscale'
 
 export interface RenderJobParams {
   threshold?: number
@@ -50,6 +69,17 @@ export interface RenderJobParams {
   originalVolume?: number
   /** All input paths for a merge job, in merge order. */
   inputPaths?: string[]
+  /** Upscale job snapshot (settings are copied at enqueue time). */
+  upscale?: {
+    method: 'lanczos' | 'realesrgan'
+    targetHeight?: number
+    scale?: number
+    model?: string
+    exePath?: string
+    modelsPath?: string
+    rife?: { exePath: string; modelPath: string; multiplier: number }
+    outputSuffix: string
+  }
   format?: 'mp4' | 'webm' | 'mov'
   quality?: 'low' | 'medium' | 'high'
 }
@@ -63,6 +93,9 @@ export interface RenderJob {
   params?: RenderJobParams
   status: 'pending' | 'processing' | 'completed' | 'failed'
   progress: number
+  /** Current pipeline stage label (e.g. "Extract Frames"), when the
+   * running job reports stages. Shown in the Render Queue. */
+  stage?: string
   outputPath?: string
   error?: string
   createdAt: Date

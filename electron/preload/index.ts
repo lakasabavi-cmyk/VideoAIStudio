@@ -4,6 +4,7 @@ import type {
   AdjustVolumeRequest,
   GetLastFrameRequest,
   MergeVideosRequest,
+  UpscaleRequest,
   AddMusicRequest,
   ExportRequest,
 } from '@/types/ipc'
@@ -33,6 +34,9 @@ export const preload = {
   mergeVideos: (request: MergeVideosRequest) =>
     ipcRenderer.invoke('ffmpeg:merge', request),
 
+  upscaleVideo: (request: UpscaleRequest) =>
+    ipcRenderer.invoke('ffmpeg:upscale', request),
+
   addMusic: (request: AddMusicRequest) =>
     ipcRenderer.invoke('ffmpeg:addMusic', request),
 
@@ -40,8 +44,12 @@ export const preload = {
     ipcRenderer.invoke('ffmpeg:export', request),
 
   // Progress tracking
-  onRenderProgress: (callback: (progress: number) => void) =>
-    ipcRenderer.on('render:progress', (_, progress) => callback(progress)),
+  onRenderProgress: (callback: (update: { progress: number; stage?: string }) => void) =>
+    ipcRenderer.on('render:progress', (_, payload) =>
+      callback(
+        typeof payload === 'number' ? { progress: payload } : payload
+      )
+    ),
 
   onRenderComplete: (callback: () => void) =>
     ipcRenderer.on('render:complete', () => callback()),

@@ -7,6 +7,7 @@ import type {
   AdjustVolumeRequest,
   GetLastFrameRequest,
   MergeVideosRequest,
+  UpscaleRequest,
   AddMusicRequest,
   ExportRequest,
   ProcessResult,
@@ -19,9 +20,9 @@ import type {
  * is unambiguous.
  */
 function progressFor(event: IpcMainInvokeEvent) {
-  return (progress: number) => {
+  return (progress: number, stage?: string) => {
     if (!event.sender.isDestroyed()) {
-      event.sender.send('render:progress', progress)
+      event.sender.send('render:progress', { progress, stage })
     }
   }
 }
@@ -152,6 +153,28 @@ export function setupFFmpegWorkers() {
           request.outputPath,
           progressFor(event)
         )
+        return done(event, request.outputPath)
+      } catch (error) {
+        return fail(event, error)
+      }
+    }
+  )
+
+  // Upscale (Lanczos quick, or Real-ESRGAN ncnn-vulkan pipeline)
+  ipcMain.handle(
+    'ffmpeg:upscale',
+    async (event, request: UpscaleRequest): Promise<ProcessResult> => {
+      try {
+        if (request.method === 'realesrgan') {
+          await FFmpegService.upscaleRealEsrgan(request, progressFor(event))
+        } else {
+          await FFmpegService.upscaleLanczos(
+            request.videoPath,
+            request.outputPath,
+            request.targetHeight ?? 1080,
+            progressFor(event)
+          )
+        }
         return done(event, request.outputPath)
       } catch (error) {
         return fail(event, error)

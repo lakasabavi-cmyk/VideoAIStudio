@@ -4,6 +4,8 @@ import ffprobeStatic from 'ffprobe-static'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { spawn } from 'child_process'
+import type { UpscaleRequest } from '@/types/ipc'
 
 /**
  * Resolve a bundled binary path.
@@ -497,6 +499,327 @@ export class FFmpegService {
         .on('error', reject)
         .run()
     })
+  }
+
+  /**
+   * Quick upscale with the Lanczos scaler to a target height
+   * (1080p / 2K / 4K / 8K), keeping the aspect ratio. The audio
+   * track is copied unchanged.
+   */
+  static async upscaleLanczos(
+    inputPath: string,
+    outputPath: string,
+    targetHeight: number,
+    onProgress?: (progress: number, stage?: string) => void
+  ): Promise<void> {
+    const metadata = await FFmpegService.getVideoMetadata(inputPath)
+    onProgress?.(0, 'Upscale')
+    return new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .videoFilters(`scale=-2:${targetHeight}:flags=lanczos`)
+        .outputOptions([
+          '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+          '-pix_fmt', 'yuv420p', '-c:a', 'copy',
+        ])
+        .output(outputPath)
+        .on('progress', (progress) => {
+          if (progress.timemark && metadata.duration > 0) {
+            const parts = progress.timemark.split(':')
+            const seconds =
+              parseInt(parts[0], 10) * 3600 +
+              parseInt(parts[1], 10) * 60 +
+              parseFloat(parts[2])
+            const percent = Math.round((seconds / metadata.duration) * 100)
+            if (Number.isFinite(percent)) {
+              onProgress?.(Math.min(100, percent), 'Upscale')
+            }
+          }
+        })
+        .on('end', () => {
+          onProgress?.(100, 'Upscale')
+          resolve()
+        })
+        .on('error', reject)
+        .run()
+    })
+  }
+
+  /**
+   * Run one ncnn-vulkan frame tool (Real-ESRGAN or RIFE) over a
+   * folder of frames, reporting progress as the share of output
+   * frames that have appeared in the output folder.
+   */
+  private static async runFrameTool(options: {
+    exePath: string
+    args: string[]
+    outputDir: string
+    expectedFrames: number
+    rangeStart: number
+    rangeEnd: number
+    stage: string
+    toolName: string
+    onProgress?: (progress: number, stage?: string) => void
+  }): Promise<void> {
+    const {
+      exePath, args, outputDir, expectedFrames,
+      rangeStart, rangeEnd, stage, toolName, onProgress,
+    } = options
+    onProgress?.(rangeStart, stage)
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(exePath, args, { windowsHide: true })
+      let stderrTail = ''
+      child.stderr.on('data', (chunk) => {
+        stderrTail = (stderrTail + String(chunk)).slice(-2000)
+      })
+      child.on('error', (err) =>
+        reject(new Error(`Could not start ${toolName}: ${err.message}`))
+      )
+      const poll = setInterval(() => {
+        try {
+          const doneCount = fs
+            .readdirSync(outputDir)
+            .filter((f) => f.endsWith('.png')).length
+          const share = Math.min(doneCount, expectedFrames) / expectedFrames
+          onProgress?.(
+            rangeStart + Math.round(share * (rangeEnd - rangeStart)),
+            stage
+          )
+        } catch {
+          // output folder briefly unavailable; next poll retries
+        }
+      }, 500)
+      child.on('close', (code) => {
+        clearInterval(poll)
+        if (code === 0) {
+          resolve()
+        } else {
+          reject(
+            new Error(
+              `${toolName} exited with code ${code}. ${stderrTail.trim()}`
+            )
+          )
+        }
+      })
+    })
+    const produced = fs
+      .readdirSync(outputDir)
+      .filter((f) => f.endsWith('.png')).length
+    if (produced === 0) {
+      throw new Error(`${toolName} produced no frames`)
+    }
+  }
+
+  /**
+   * Real-ESRGAN upscale through the realesrgan-ncnn-vulkan
+   * executable (NOT the ffmpeg scaler), with an optional RIFE
+   * frame-interpolation stage integrated into the same pipeline:
+   *
+   *   Stage 1 "Extract Frames" — the video is decoded to a PNG
+   *     sequence (lossless, so the AI sees the exact frames).
+   *   Stage 2 "RIFE Interpolation" (only when RIFE is enabled) —
+   *     rife-ncnn-vulkan synthesises the in-between frames at the
+   *     ORIGINAL resolution (cheap there, and the upscaler then
+   *     treats every final frame the same). The frame rate
+   *     multiplier is applied at rebuild time.
+   *   Stage 3 "Upscale" — realesrgan-ncnn-vulkan upscales every
+   *     frame with the chosen model.
+   *   Stage 4 "Rebuild Video" — ffmpeg re-encodes the frames at
+   *     the (possibly multiplied) frame rate and re-attaches the
+   *     original audio track (stream copy).
+   *
+   * Overall progress with RIFE: extract 0-8%, RIFE 8-30%,
+   * upscale 30-85%, rebuild 85-100%. Without RIFE the upscale
+   * stage starts at 10%. The stage label is reported throughout
+   * and shown in the Render Queue.
+   */
+  static async upscaleRealEsrgan(
+    request: UpscaleRequest,
+    onProgress?: (progress: number, stage?: string) => void
+  ): Promise<void> {
+    const exePath = request.exePath?.trim()
+    if (!exePath || !fs.existsSync(exePath)) {
+      throw new Error(
+        'Real-ESRGAN executable not found. Download realesrgan-ncnn-vulkan ' +
+          '(Windows release), unzip it, and set its path in Settings.'
+      )
+    }
+    const scale = request.scale ?? 4
+    const model = request.model ?? 'realesrgan-x4plus'
+    const modelsPath =
+      request.modelsPath?.trim() ||
+      path.join(path.dirname(exePath), 'models')
+    if (!fs.existsSync(path.join(modelsPath, `${model}.param`))) {
+      throw new Error(
+        `Real-ESRGAN model "${model}" not found in ${modelsPath}. ` +
+          'Check the models folder in Settings.'
+      )
+    }
+
+    // RIFE is optional; validate it up front so the job fails in
+    // seconds, not after the frame extraction.
+    const rife = request.rife
+    let rifeExe = ''
+    let rifeModel = ''
+    let rifeMultiplier = 1
+    if (rife) {
+      rifeExe = rife.exePath?.trim() ?? ''
+      if (!rifeExe || !fs.existsSync(rifeExe)) {
+        throw new Error(
+          'RIFE executable not found. Download rife-ncnn-vulkan ' +
+            '(Windows release), unzip it, and set its path in Settings.'
+        )
+      }
+      rifeModel =
+        rife.modelPath?.trim() ||
+        path.join(path.dirname(rifeExe), 'rife-v4.6')
+      if (!fs.existsSync(rifeModel)) {
+        throw new Error(
+          `RIFE model folder not found: ${rifeModel}. ` +
+            'Check the RIFE model path in Settings.'
+        )
+      }
+      rifeMultiplier = rife.multiplier === 4 ? 4 : 2
+    }
+
+    const metadata = await FFmpegService.getVideoMetadata(request.videoPath)
+    const fps = metadata.fps > 0 ? metadata.fps : 30
+    const totalFrames = Math.max(1, Math.round(metadata.duration * fps))
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'videoai-esrgan-'))
+    const framesDir = path.join(tmpDir, 'frames')
+    const rifeDir = path.join(tmpDir, 'rife')
+    const upscaledDir = path.join(tmpDir, 'upscaled')
+    fs.mkdirSync(framesDir)
+    fs.mkdirSync(upscaledDir)
+    if (rife) fs.mkdirSync(rifeDir)
+    try {
+      // Stage 1: extract frames as a PNG sequence.
+      const extractEnd = rife ? 8 : 10
+      onProgress?.(0, 'Extract Frames')
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(request.videoPath)
+          .outputOptions(['-vsync', '0'])
+          .output(path.join(framesDir, 'frame_%06d.png'))
+          .on('progress', (progress) => {
+            if (progress.frames) {
+              const share = Math.min(progress.frames, totalFrames) / totalFrames
+              onProgress?.(Math.round(share * extractEnd), 'Extract Frames')
+            }
+          })
+          .on('end', () => resolve())
+          .on('error', reject)
+          .run()
+      })
+      const frameCount = fs
+        .readdirSync(framesDir)
+        .filter((f) => f.endsWith('.png')).length
+      if (frameCount === 0) {
+        throw new Error('Frame extraction produced no frames')
+      }
+
+      // Stage 2 (optional): RIFE interpolation at native size.
+      let esrganInputDir = framesDir
+      let finalFrameCount = frameCount
+      if (rife) {
+        await FFmpegService.runFrameTool({
+          exePath: rifeExe,
+          args: [
+            '-i', framesDir,
+            '-o', rifeDir,
+            '-m', rifeModel,
+            '-n', String(frameCount * rifeMultiplier),
+            '-f', '%08d.png',
+          ],
+          outputDir: rifeDir,
+          expectedFrames: frameCount * rifeMultiplier,
+          rangeStart: extractEnd,
+          rangeEnd: 30,
+          stage: 'RIFE Interpolation',
+          toolName: 'RIFE',
+          onProgress,
+        })
+        esrganInputDir = rifeDir
+        finalFrameCount = fs
+          .readdirSync(rifeDir)
+          .filter((f) => f.endsWith('.png')).length
+      }
+
+      // Stage 3: Real-ESRGAN upscale of every frame.
+      await FFmpegService.runFrameTool({
+        exePath,
+        args: [
+          '-i', esrganInputDir,
+          '-o', upscaledDir,
+          '-s', String(scale),
+          '-m', modelsPath,
+          '-n', model,
+          '-f', 'png',
+        ],
+        outputDir: upscaledDir,
+        expectedFrames: finalFrameCount,
+        rangeStart: rife ? 30 : 10,
+        rangeEnd: 85,
+        stage: 'Upscale',
+        toolName: 'Real-ESRGAN',
+        onProgress,
+      })
+
+      // Stage 4: rebuild. The frame pattern is derived from the
+      // actual files (RIFE writes %08d names starting at 0, the
+      // extractor writes frame_%06d starting at 1), so either
+      // chain rebuilds correctly.
+      onProgress?.(85, 'Rebuild Video')
+      const upscaledFrames = fs
+        .readdirSync(upscaledDir)
+        .filter((f) => f.endsWith('.png'))
+        .sort()
+      const firstFrame = upscaledFrames[0]
+      const digitMatch = firstFrame.match(/(\d+)\.png$/)
+      const digitWidth = digitMatch ? digitMatch[1].length : 6
+      const startNumber = digitMatch ? parseInt(digitMatch[1], 10) : 1
+      const prefix = firstFrame.slice(
+        0,
+        firstFrame.length - digitWidth - '.png'.length
+      )
+      const pattern = path.join(
+        upscaledDir,
+        `${prefix}%0${digitWidth}d.png`
+      )
+      const outputFps = fps * rifeMultiplier
+      await new Promise<void>((resolve, reject) => {
+        const command = ffmpeg()
+          .input(pattern)
+          .inputOptions([
+            '-framerate', String(outputFps),
+            '-start_number', String(startNumber),
+          ])
+        if (metadata.audioCodec) {
+          command.input(request.videoPath)
+        }
+        command
+          .outputOptions([
+            '-map', '0:v',
+            ...(metadata.audioCodec ? ['-map', '1:a', '-c:a', 'copy'] : []),
+            '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+            '-pix_fmt', 'yuv420p',
+            '-r', String(outputFps),
+          ])
+          .output(request.outputPath)
+          .on('progress', (progress) => {
+            if (progress.frames) {
+              const share =
+                Math.min(progress.frames, finalFrameCount) / finalFrameCount
+              onProgress?.(85 + Math.round(share * 15), 'Rebuild Video')
+            }
+          })
+          .on('end', () => resolve())
+          .on('error', reject)
+          .run()
+      })
+      onProgress?.(100, 'Rebuild Video')
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
   }
 
   /**

@@ -9,14 +9,22 @@ import {
   enqueueMerge,
   enqueueAddMusic,
   enqueueExport,
+  enqueueUpscale,
 } from '@/lib/jobRunner'
 import type { VideoFile } from '@/types'
-import { Trash2, VolumeX, Volume2, Music, Download, Image } from 'lucide-react'
+import { Trash2, VolumeX, Volume2, Music, Download, Image, Scaling } from 'lucide-react'
 
 export const Dashboard: FC = () => {
   const { videos, currentVideo, removeVideo } = useVideoStore()
   const { jobs } = useRenderQueue()
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+
+  const handleUpscale = (video: VideoFile) => {
+    const error = enqueueUpscale(video)
+    setActionMessage(
+      error ?? `Upscale job queued for ${video.name} — see Render Queue.`
+    )
+  }
 
   const handleAddMusic = (video: VideoFile) => {
     const error = enqueueAddMusic(video)
@@ -69,6 +77,13 @@ export const Dashboard: FC = () => {
         title="Extract the last frame as a PNG into a 'first frame' folder"
       >
         <Image size={16} /> Last Frame
+      </button>
+      <button
+        onClick={() => handleUpscale(video)}
+        className="flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-indigo-600 text-gray-200 text-sm rounded-lg transition-colors"
+        title="Upscale this video (method and options are set in Settings)"
+      >
+        <Scaling size={16} /> Upscale
       </button>
       <button
         onClick={() => {

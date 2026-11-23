@@ -13,6 +13,15 @@ export const Settings: FC = () => {
     originalVolume: stored.originalVolume,
     exportFormat: stored.exportFormat,
     exportQuality: stored.exportQuality,
+    upscaleMethod: stored.upscaleMethod,
+    lanczosTarget: stored.lanczosTarget,
+    esrganScale: stored.esrganScale,
+    esrganPath: stored.esrganPath,
+    esrganModelsPath: stored.esrganModelsPath,
+    rifeEnabled: stored.rifeEnabled,
+    rifeMultiplier: stored.rifeMultiplier,
+    rifePath: stored.rifePath,
+    rifeModelPath: stored.rifeModelPath,
   })
   const [saved, setSaved] = useState(false)
 
@@ -155,6 +164,196 @@ export const Settings: FC = () => {
               />
             </div>
           </div>
+        </div>
+
+        <div className="bg-gray-900 rounded-lg p-6 border border-gray-800 space-y-4">
+          <h2 className="text-xl font-bold text-white">Upscale</h2>
+          <div className="space-y-3">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="upscaleMethod"
+                checked={draft.upscaleMethod === 'lanczos'}
+                onChange={() => setDraft({ ...draft, upscaleMethod: 'lanczos' })}
+                className="w-4 h-4"
+              />
+              <span className="text-gray-200">
+                Lanczos (quick) — resize in one ffmpeg pass
+              </span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="radio"
+                name="upscaleMethod"
+                checked={draft.upscaleMethod === 'realesrgan'}
+                onChange={() => setDraft({ ...draft, upscaleMethod: 'realesrgan' })}
+                className="w-4 h-4"
+              />
+              <span className="text-gray-200">
+                Real-ESRGAN — AI upscale via the ncnn-vulkan executable
+                (extract frames → upscale → rebuild)
+              </span>
+            </label>
+          </div>
+
+          {draft.upscaleMethod === 'lanczos' && (
+            <div>
+              <label className="text-gray-300 text-sm">Target resolution</label>
+              <div className="flex gap-2 mt-2">
+                {(['1080p', '2k', '4k', '8k'] as const).map((target) => (
+                  <button
+                    key={target}
+                    onClick={() => setDraft({ ...draft, lanczosTarget: target })}
+                    className={
+                      'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
+                      (draft.lanczosTarget === target
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
+                    }
+                  >
+                    {target.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Output height 1080 / 1440 / 2160 / 4320 px, aspect ratio
+                kept. Saved as name_1080p.mp4, name_2k.mp4, and so on.
+              </p>
+            </div>
+          )}
+
+          {draft.upscaleMethod === 'realesrgan' && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-gray-300 text-sm">Scale / model</label>
+                <div className="flex gap-2 mt-2">
+                  {([2, 3, 4] as const).map((scale) => (
+                    <button
+                      key={scale}
+                      onClick={() => setDraft({ ...draft, esrganScale: scale })}
+                      className={
+                        'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
+                        (draft.esrganScale === scale
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
+                      }
+                    >
+                      {scale}x
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  2x and 3x use realesr-animevideov3 (video model), 4x uses
+                  realesrgan-x4plus. Saved as name_2x.mp4 / name_4x.mp4.
+                </p>
+              </div>
+              <div>
+                <label className="text-gray-300 text-sm">
+                  Real-ESRGAN executable (realesrgan-ncnn-vulkan.exe)
+                </label>
+                <input
+                  type="text"
+                  value={draft.esrganPath}
+                  onChange={(e) =>
+                    setDraft({ ...draft, esrganPath: e.target.value })
+                  }
+                  placeholder="C:\\tools\\realesrgan\\realesrgan-ncnn-vulkan.exe"
+                  className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-gray-300 text-sm">
+                  Models folder (blank = "models" next to the executable)
+                </label>
+                <input
+                  type="text"
+                  value={draft.esrganModelsPath}
+                  onChange={(e) =>
+                    setDraft({ ...draft, esrganModelsPath: e.target.value })
+                  }
+                  placeholder="C:\\tools\\realesrgan\\models"
+                  className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
+                />
+              </div>
+
+              <div className="border-t border-gray-800 pt-4 space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={draft.rifeEnabled}
+                    onChange={(e) =>
+                      setDraft({ ...draft, rifeEnabled: e.target.checked })
+                    }
+                    className="w-4 h-4"
+                  />
+                  <span className="text-gray-200">
+                    RIFE frame interpolation (smoother motion, runs before
+                    the upscale, inside the same job)
+                  </span>
+                </label>
+                {draft.rifeEnabled && (
+                  <>
+                    <div>
+                      <label className="text-gray-300 text-sm">
+                        Frame-rate multiplier
+                      </label>
+                      <div className="flex gap-2 mt-2">
+                        {([2, 4] as const).map((mult) => (
+                          <button
+                            key={mult}
+                            onClick={() =>
+                              setDraft({ ...draft, rifeMultiplier: mult })
+                            }
+                            className={
+                              'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
+                              (draft.rifeMultiplier === mult
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
+                            }
+                          >
+                            {mult}x fps
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        A 24 fps clip becomes 48 fps at 2x. Saved as
+                        name_4x_rife2x.mp4.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-gray-300 text-sm">
+                        RIFE executable (rife-ncnn-vulkan.exe)
+                      </label>
+                      <input
+                        type="text"
+                        value={draft.rifePath}
+                        onChange={(e) =>
+                          setDraft({ ...draft, rifePath: e.target.value })
+                        }
+                        placeholder="C:\\tools\\rife\\rife-ncnn-vulkan.exe"
+                        className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-gray-300 text-sm">
+                        RIFE model folder (blank = "rife-v4.6" next to the
+                        executable)
+                      </label>
+                      <input
+                        type="text"
+                        value={draft.rifeModelPath}
+                        onChange={(e) =>
+                          setDraft({ ...draft, rifeModelPath: e.target.value })
+                        }
+                        placeholder="C:\\tools\\rife\\rife-v4.6"
+                        className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <button

@@ -20,14 +20,20 @@ let progressHooked = false
 function hookProgress() {
   if (progressHooked) return
   progressHooked = true
-  window.electronAPI.onRenderProgress((progress) => {
+  window.electronAPI.onRenderProgress((update) => {
     if (!activeJobId) return
     const { jobs, updateJob } = useRenderQueue.getState()
     const job = jobs.find((j) => j.id === activeJobId)
     if (job && job.status === 'processing') {
-      const pct = Math.max(0, Math.min(100, Math.round(progress)))
-      if (Number.isFinite(pct) && pct !== job.progress) {
-        updateJob({ ...job, progress: pct, updatedAt: new Date() })
+      const pct = Math.max(0, Math.min(100, Math.round(update.progress)))
+      const stageChanged = update.stage !== undefined && update.stage !== job.stage
+      if (Number.isFinite(pct) && (pct !== job.progress || stageChanged)) {
+        updateJob({
+          ...job,
+          progress: Number.isFinite(pct) ? pct : job.progress,
+          stage: update.stage ?? job.stage,
+          updatedAt: new Date(),
+        })
       }
     }
   })
@@ -90,6 +96,58 @@ export function enqueueMerge(videos: VideoFile[]) {
   enqueue(job)
 }
 
+const LANCZOS_TARGETS = { '1080p': 1080, '2k': 1440, '4k': 2160, '8k': 4320 } as const
+const ESRGAN_MODELS = {
+  2: 'realesr-animevideov3-x2',
+  3: 'realesr-animevideov3-x3',
+  4: 'realesrgan-x4plus',
+} as const
+
+export function enqueueUpscale(video: VideoFile): string | null {
+  const settings = useSettingsStore.getState()
+  if (settings.upscaleMethod === 'realesrgan') {
+    if (!settings.esrganPath.trim()) {
+      return 'Set the Real-ESRGAN executable path in Settings first.'
+    }
+    const rife = settings.rifeEnabled
+      ? {
+          exePath: settings.rifePath,
+          modelPath: settings.rifeModelPath,
+          multiplier: settings.rifeMultiplier,
+        }
+      : undefined
+    if (settings.rifeEnabled && !settings.rifePath.trim()) {
+      return 'RIFE is enabled but its executable path is not set in Settings.'
+    }
+    enqueue(
+      baseJob('upscale', video, {
+        upscale: {
+          method: 'realesrgan',
+          scale: settings.esrganScale,
+          model: ESRGAN_MODELS[settings.esrganScale],
+          exePath: settings.esrganPath,
+          modelsPath: settings.esrganModelsPath,
+          rife,
+          outputSuffix:
+            `_${settings.esrganScale}x` +
+            (rife ? `_rife${settings.rifeMultiplier}x` : ''),
+        },
+      })
+    )
+  } else {
+    enqueue(
+      baseJob('upscale', video, {
+        upscale: {
+          method: 'lanczos',
+          targetHeight: LANCZOS_TARGETS[settings.lanczosTarget],
+          outputSuffix: `_${settings.lanczosTarget}`,
+        },
+      })
+    )
+  }
+  return null
+}
+
 export function enqueueExport(video: VideoFile) {
   const { exportFormat, exportQuality } = useSettingsStore.getState()
   enqueue(
@@ -148,6 +206,21 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
         videoPaths: job.params?.inputPaths ?? [job.inputPath],
         outputPath: withSuffix(job.inputPath, '.merged'),
       })
+    case 'upscale': {
+      const upscale = job.params?.upscale
+      if (!upscale) throw new Error('Missing upscale settings')
+      return api.upscaleVideo({
+        videoPath: job.inputPath,
+        outputPath: withSuffix(job.inputPath, upscale.outputSuffix),
+        method: upscale.method,
+        targetHeight: upscale.targetHeight,
+        scale: upscale.scale,
+        model: upscale.model,
+        exePath: upscale.exePath,
+        modelsPath: upscale.modelsPath,
+        rife: upscale.rife,
+      })
+    }
     case 'export':
       return api.exportVideo({
         videoPath: job.inputPath,

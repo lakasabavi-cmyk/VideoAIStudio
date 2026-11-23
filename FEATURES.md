@@ -59,6 +59,37 @@ from memory.
   otherwise the concat filter invents duplicate frames at the
   joins.
 
+## Upscale (added 2026-11-23)
+
+Two methods, chosen in Settings; the Dashboard Upscale button
+runs a job with the saved options. Output names:
+`name_1080p.mp4` / `name_2k.mp4` / `name_4k.mp4` / `name_8k.mp4`
+for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
+
+- **Lanczos (quick)**: one ffmpeg pass, `scale` filter with
+  Lanczos to the target height (1080 / 1440 / 2160 / 4320),
+  aspect ratio kept, audio copied.
+- **Real-ESRGAN**: uses the realesrgan-ncnn-vulkan EXECUTABLE
+  (path set in Settings), never the ffmpeg scaler. Pipeline:
+  Extract Frames (PNG sequence) → Upscale (ncnn-vulkan;
+  2x/3x = realesr-animevideov3, 4x = realesrgan-x4plus) →
+  Rebuild Video (ffmpeg at the original fps, original audio
+  re-attached by stream copy). The Render Queue shows the
+  current stage and overall progress across the stages.
+- **RIFE (optional, integrated into the Real-ESRGAN pipeline)**:
+  rife-ncnn-vulkan executable (path in Settings, model folder
+  default `rife-v4.6` next to it). When enabled it runs at the
+  ORIGINAL resolution between Extract Frames and Upscale —
+  interpolating first is far cheaper than interpolating
+  upscaled frames, and the upscaler then treats every final
+  frame the same. Multiplier 2x or 4x frame rate (24 fps →
+  48 fps at 2x); output name gains a `_rife2x` / `_rife4x`
+  suffix. Queue stages: Extract Frames → RIFE Interpolation →
+  Upscale → Rebuild Video.
+- Both ncnn tools need a Vulkan GPU on the user's machine; if
+  the executable or model is missing the job fails immediately
+  with a message saying what to set in Settings.
+
 ## Export
 
 - Re-encodes with explicit codecs (libx264 / yuv420p / AAC).

@@ -9,6 +9,7 @@ const KIND_LABELS: Record<RenderJobKind, string> = {
   'adjust-volume': 'Adjust Volume',
   'get-last-frame': 'Get Last Frame',
   merge: 'Merge Videos',
+  upscale: 'Upscale',
   export: 'Export',
 }
 
@@ -68,6 +69,11 @@ export const RenderQueue: FC = () => {
                       style={{ width: job.progress + '%' }}
                     />
                   </div>
+                  {job.status === 'processing' && job.stage && (
+                    <p className="text-sm text-blue-300 mt-2">
+                      Stage: {job.stage}
+                    </p>
+                  )}
                   {job.status === 'completed' && job.outputPath && (
                     <p className="text-sm text-green-400 mt-2 break-all">
                       Output: {job.outputPath}
