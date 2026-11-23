@@ -116,8 +116,15 @@ export interface RenderJobParams {
       startAtSeconds: number
       startSeconds: number
       endSeconds: number
+      lane?: string
     }[]
+    audioLaneFades?: Record<
+      string,
+      { fadeInSeconds: number; fadeOutSeconds: number }
+    >
     originalVolume: number
+    originalFadeInSeconds?: number
+    originalFadeOutSeconds?: number
   }
   quality?: 'low' | 'medium' | 'high'
 }

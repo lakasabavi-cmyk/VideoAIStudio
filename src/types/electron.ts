@@ -16,6 +16,8 @@ import type {
   TimelineThumbsRequest,
   ComposeRequest,
   ThumbnailsRequest,
+  WaveformRequest,
+  FrameExtractRequest,
   ProcessResult,
 } from './ipc'
 
@@ -66,6 +68,20 @@ export interface ElectronAPI {
   extractThumbnails: (request: ThumbnailsRequest) => Promise<{
     success: boolean
     data?: string[]
+    error?: string
+  }>
+  extractWaveformPeaks: (request: WaveformRequest) => Promise<{
+    success: boolean
+    data?: number[]
+    error?: string
+  }>
+  extractFrameAt: (request: FrameExtractRequest) => Promise<{
+    success: boolean
+    data?: string
+    error?: string
+  }>
+  openFolder: (filePath: string) => Promise<{
+    success: boolean
     error?: string
   }>
   selectFiles: (kind: 'video' | 'audio') => Promise<{

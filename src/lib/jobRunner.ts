@@ -103,20 +103,24 @@ const ESRGAN_MODELS = {
   4: 'realesrgan-x4plus',
 } as const
 
-export function enqueueUpscale(video: VideoFile): string | null {
+export function enqueueUpscale(
+  video: VideoFile,
+  forceRife = false
+): string | null {
   const settings = useSettingsStore.getState()
-  if (settings.upscaleMethod === 'realesrgan') {
+  const wantRife = settings.rifeEnabled || forceRife
+  if (settings.upscaleMethod === 'realesrgan' || forceRife) {
     if (!settings.esrganPath.trim()) {
       return 'Set the Real-ESRGAN executable path in Settings first.'
     }
-    const rife = settings.rifeEnabled
+    const rife = wantRife
       ? {
           exePath: settings.rifePath,
           modelPath: settings.rifeModelPath,
           multiplier: settings.rifeMultiplier,
         }
       : undefined
-    if (settings.rifeEnabled && !settings.rifePath.trim()) {
+    if (wantRife && !settings.rifePath.trim()) {
       return 'RIFE is enabled but its executable path is not set in Settings.'
     }
     enqueue(
@@ -215,6 +219,13 @@ export function enqueueCompose(timeline: {
     duration: number
   }[]
   laneOffsets: Record<'voice' | 'music' | 'sfx', number>
+  laneVolumes?: Record<'voice' | 'music' | 'sfx', number>
+  laneFades?: Record<
+    'voice' | 'music' | 'sfx',
+    { fadeIn: number; fadeOut: number }
+  >
+  videoFadeIn?: number
+  videoFadeOut?: number
   originalVolume: number
 }): string | null {
   if (timeline.videoClips.length === 0) {
@@ -240,14 +251,30 @@ export function enqueueCompose(timeline: {
   const audioClips = timeline.audioClips.map((a) => {
     const startAt = laneCursor[a.kind] ?? 0
     laneCursor[a.kind] = startAt + Math.max(0, a.trimEnd - a.trimStart)
+    // Clip volume x its lane (track) volume.
+    const laneVolume = (timeline.laneVolumes?.[a.kind] ?? 100) / 100
     return {
       path: a.path,
-      volume: a.volume / 100,
+      volume: (a.volume / 100) * laneVolume,
       startAtSeconds: startAt,
       startSeconds: a.trimStart,
       endSeconds: a.trimEnd,
+      lane: a.kind,
     }
   })
+  const audioLaneFades: Record<
+    string,
+    { fadeInSeconds: number; fadeOutSeconds: number }
+  > = {}
+  for (const kind of ['voice', 'music', 'sfx'] as const) {
+    const fade = timeline.laneFades?.[kind]
+    if (fade && (fade.fadeIn > 0 || fade.fadeOut > 0)) {
+      audioLaneFades[kind] = {
+        fadeInSeconds: fade.fadeIn,
+        fadeOutSeconds: fade.fadeOut,
+      }
+    }
+  }
   const job = baseJob('compose', pseudo, {
     compose: {
       clips: timeline.videoClips.map((c) => ({
@@ -258,7 +285,10 @@ export function enqueueCompose(timeline: {
         dropFirstFrame: c.dropFirstFrame,
       })),
       audioClips,
+      audioLaneFades,
       originalVolume: timeline.originalVolume / 100,
+      originalFadeInSeconds: timeline.videoFadeIn ?? 0,
+      originalFadeOutSeconds: timeline.videoFadeOut ?? 0,
     },
   })
   job.videoName =

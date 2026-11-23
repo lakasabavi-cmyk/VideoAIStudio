@@ -609,8 +609,15 @@ export class FFmpegService {
         startAtSeconds: number
         startSeconds: number
         endSeconds: number
+        lane?: string
       }[]
+      audioLaneFades?: Record<
+        string,
+        { fadeInSeconds: number; fadeOutSeconds: number }
+      >
       originalVolume: number
+      originalFadeInSeconds?: number
+      originalFadeOutSeconds?: number
       outputPath: string
     },
     onProgress?: (progress: number) => void
@@ -701,32 +708,87 @@ export class FFmpegService {
     )
     filters.push(`[cv]fps=${targetFps}[outv]`)
 
-    // Added-audio bed: every clip at its absolute start time.
-    let audioOut = '[ca]'
+    // Video-track audio fades, applied to the concatenated clip
+    // audio before any bed is mixed over it.
+    let mainAudio = '[ca]'
+    const vIn = Math.min(request.originalFadeInSeconds ?? 0, outputDuration / 2)
+    const vOut = Math.min(request.originalFadeOutSeconds ?? 0, outputDuration / 2)
+    const mainFades: string[] = []
+    if (vIn > 0.01) mainFades.push(`afade=t=in:st=0:d=${vIn.toFixed(3)}`)
+    if (vOut > 0.01) {
+      mainFades.push(
+        `afade=t=out:st=${(outputDuration - vOut).toFixed(3)}:d=${vOut.toFixed(3)}`
+      )
+    }
+    if (mainFades.length > 0) {
+      filters.push(`[ca]${mainFades.join(',')}[caf]`)
+      mainAudio = '[caf]'
+    }
+
+    // Added-audio bed: clips are grouped by lane (Voice / Music /
+    // SFX); each lane is mixed on its own and faded as a track,
+    // then all lanes are mixed over the main audio.
+    let audioOut = mainAudio
     if (request.audioClips.length > 0) {
-      const bedLabels: string[] = []
-      for (let k = 0; k < request.audioClips.length; k++) {
-        const audio = request.audioClips[k]
-        const inputIndex = request.clips.length + k
-        const delayMs = Math.round(Math.max(0, audio.startAtSeconds) * 1000)
-        const volume = Math.max(0, Math.min(1, audio.volume))
-        const start = Math.max(0, audio.startSeconds)
-        const end = Math.max(start + 0.1, audio.endSeconds)
-        filters.push(
-          `[${inputIndex}:a]atrim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
-            `asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo,` +
-            `volume=${volume.toFixed(3)},adelay=${delayMs}[b${k}]`
-        )
-        bedLabels.push(`[b${k}]`)
+      const lanes = new Map<string, number[]>()
+      request.audioClips.forEach((audio, k) => {
+        const lane = audio.lane ?? 'music'
+        if (!lanes.has(lane)) lanes.set(lane, [])
+        lanes.get(lane)!.push(k)
+      })
+      const laneLabels: string[] = []
+      let laneNo = 0
+      for (const [lane, indexes] of lanes) {
+        const labels: string[] = []
+        let laneStart = Infinity
+        let laneEnd = 0
+        for (const k of indexes) {
+          const audio = request.audioClips[k]
+          const inputIndex = request.clips.length + k
+          const delayMs = Math.round(Math.max(0, audio.startAtSeconds) * 1000)
+          const volume = Math.max(0, Math.min(1, audio.volume))
+          const start = Math.max(0, audio.startSeconds)
+          const end = Math.max(start + 0.1, audio.endSeconds)
+          laneStart = Math.min(laneStart, audio.startAtSeconds)
+          laneEnd = Math.max(laneEnd, audio.startAtSeconds + (end - start))
+          filters.push(
+            `[${inputIndex}:a]atrim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
+              `asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo,` +
+              `volume=${volume.toFixed(3)},adelay=${delayMs}[b${k}]`
+          )
+          labels.push(`[b${k}]`)
+        }
+        if (labels.length === 1) {
+          filters.push(`${labels[0]}anull[lane${laneNo}raw]`)
+        } else {
+          filters.push(
+            `${labels.join('')}amix=inputs=${labels.length}:duration=longest:normalize=0[lane${laneNo}raw]`
+          )
+        }
+        const span = Math.max(0, laneEnd - laneStart)
+        const fades = request.audioLaneFades?.[lane]
+        const fparts: string[] = []
+        if (fades && span > 0.05) {
+          const fi = Math.min(fades.fadeInSeconds ?? 0, span / 2)
+          const fo = Math.min(fades.fadeOutSeconds ?? 0, span / 2)
+          if (fi > 0.01) {
+            fparts.push(`afade=t=in:st=${laneStart.toFixed(3)}:d=${fi.toFixed(3)}`)
+          }
+          if (fo > 0.01) {
+            fparts.push(`afade=t=out:st=${(laneEnd - fo).toFixed(3)}:d=${fo.toFixed(3)}`)
+          }
+        }
+        if (fparts.length > 0) {
+          filters.push(`[lane${laneNo}raw]${fparts.join(',')}[lane${laneNo}]`)
+          laneLabels.push(`[lane${laneNo}]`)
+        } else {
+          laneLabels.push(`[lane${laneNo}raw]`)
+        }
+        laneNo++
       }
-      if (bedLabels.length === 1) {
-        filters.push(`${bedLabels[0]}anull[bed]`)
-      } else {
-        filters.push(
-          `${bedLabels.join('')}amix=inputs=${bedLabels.length}:duration=longest:normalize=0[bed]`
-        )
-      }
-      filters.push(`[ca][bed]amix=inputs=2:duration=first:normalize=0[outa]`)
+      filters.push(
+        `${mainAudio}${laneLabels.join('')}amix=inputs=${laneLabels.length + 1}:duration=first:normalize=0[outa]`
+      )
       audioOut = '[outa]'
     }
 
@@ -771,6 +833,142 @@ export class FFmpegService {
    * under the app's userData folder, keyed by path + range +
    * count, so re-renders of the editor do not re-extract.
    */
+  /**
+   * Peak levels for drawing an audio waveform: decode the kept
+   * range to mono 4 kHz float PCM and take the peak per bucket.
+   * Cached as JSON under userData/wave-cache. Files without an
+   * audio stream yield all zeros.
+   */
+  static async extractWaveformPeaks(
+    mediaPath: string,
+    startSeconds: number,
+    endSeconds: number,
+    buckets: number
+  ): Promise<number[]> {
+    const length = Math.max(0.1, endSeconds - startSeconds)
+    const count = Math.min(400, Math.max(8, Math.floor(buckets)))
+    const { createHash } = await import('crypto')
+    const { app } = await import('electron')
+    const key = createHash('sha1')
+      .update(
+        `${mediaPath}|${startSeconds.toFixed(2)}|${endSeconds.toFixed(2)}|${count}`
+      )
+      .digest('hex')
+      .slice(0, 16)
+    const cacheDir = path.join(app.getPath('userData'), 'wave-cache')
+    const cacheFile = path.join(cacheDir, `${key}.json`)
+    try {
+      if (fs.existsSync(cacheFile)) {
+        const parsed = JSON.parse(fs.readFileSync(cacheFile, 'utf8'))
+        if (Array.isArray(parsed) && parsed.length === count) {
+          return parsed as number[]
+        }
+      }
+    } catch {
+      // unreadable cache: regenerate below
+    }
+    const buf = await new Promise<Buffer>((resolve) => {
+      const child = spawn(resolveBinaryPath(ffmpegStatic), [
+        '-v', 'error',
+        '-ss', startSeconds.toFixed(3),
+        '-i', mediaPath,
+        '-t', length.toFixed(3),
+        '-vn', '-ac', '1', '-ar', '4000',
+        '-f', 'f32le', '-',
+      ])
+      const chunks: Buffer[] = []
+      child.stdout.on('data', (c: Buffer) => chunks.push(c))
+      child.on('error', () => resolve(Buffer.alloc(0)))
+      child.on('close', () => resolve(Buffer.concat(chunks)))
+    })
+    const samples = Math.floor(buf.length / 4)
+    const peaks = new Array<number>(count).fill(0)
+    if (samples > 0) {
+      const view = new Float32Array(buf.buffer, buf.byteOffset, samples)
+      const per = samples / count
+      for (let b = 0; b < count; b++) {
+        const from = Math.floor(b * per)
+        const to = Math.max(from + 1, Math.floor((b + 1) * per))
+        let peak = 0
+        for (let i = from; i < to && i < samples; i++) {
+          const v = Math.abs(view[i])
+          if (v > peak) peak = v
+        }
+        peaks[b] = Math.round(Math.min(1, peak) * 1000) / 1000
+      }
+    }
+    try {
+      fs.mkdirSync(cacheDir, { recursive: true })
+      fs.writeFileSync(cacheFile, JSON.stringify(peaks))
+    } catch {
+      // cache is best-effort
+    }
+    return peaks
+  }
+
+  /**
+   * Save one frame of a clip as a PNG next to the source file, in
+   * the same "first frame" folder the Last Frame button uses.
+   * 'first' takes the frame at timeSeconds; 'last' decodes the
+   * final 0.7 s of the kept range and keeps the last frame, so it
+   * is the true last kept frame rather than a seek approximation.
+   */
+  static async extractFrameAt(
+    videoPath: string,
+    timeSeconds: number,
+    which: 'first' | 'last',
+    rangeStartSeconds: number
+  ): Promise<string> {
+    const dir = path.join(path.dirname(videoPath), 'first frame')
+    fs.mkdirSync(dir, { recursive: true })
+    const base = path.basename(videoPath).replace(/\.[^.]+$/, '')
+    const outputPath = path.join(
+      dir,
+      `${base}_${which === 'first' ? 'firstframe' : 'lastframe'}.png`
+    )
+    const runOnce = (
+      build: (command: ffmpeg.FfmpegCommand) => ffmpeg.FfmpegCommand
+    ) =>
+      new Promise<void>((resolve, reject) => {
+        build(FFmpegService.trackCommand(ffmpeg(videoPath)))
+          .on('end', () => resolve())
+          .on('error', reject)
+          .run()
+      })
+    if (which === 'first') {
+      await runOnce((command) =>
+        command
+          .seekInput(Math.max(0, timeSeconds))
+          .outputOptions(['-frames:v', '1', '-q:v', '2'])
+          .output(outputPath)
+      )
+    } else {
+      const winStart = Math.max(rangeStartSeconds, timeSeconds - 0.7)
+      const winLen = Math.max(0.05, timeSeconds - winStart)
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'videoai-frame-'))
+      try {
+        await runOnce((command) =>
+          command
+            .seekInput(winStart)
+            .duration(winLen)
+            .outputOptions(['-vsync', 'vfr', '-q:v', '2'])
+            .output(path.join(tmpDir, 'f%04d.png'))
+        )
+        const frames = fs
+          .readdirSync(tmpDir)
+          .filter((f) => f.endsWith('.png'))
+          .sort()
+        if (frames.length === 0) {
+          throw new Error('No frame found at that position')
+        }
+        fs.copyFileSync(path.join(tmpDir, frames[frames.length - 1]), outputPath)
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true })
+      }
+    }
+    return outputPath
+  }
+
   static async extractThumbnails(
     videoPath: string,
     startSeconds: number,

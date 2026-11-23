@@ -15,6 +15,8 @@ import type {
   TimelineThumbsRequest,
   ComposeRequest,
   ThumbnailsRequest,
+  WaveformRequest,
+  FrameExtractRequest,
 } from '@/types/ipc'
 
 export const preload = {
@@ -75,6 +77,14 @@ export const preload = {
 
   extractThumbnails: (request: ThumbnailsRequest) =>
     ipcRenderer.invoke('media:thumbnails', request),
+  extractWaveformPeaks: (request: WaveformRequest) =>
+    ipcRenderer.invoke('media:waveform', request),
+
+  extractFrameAt: (request: FrameExtractRequest) =>
+    ipcRenderer.invoke('media:extractFrame', request),
+
+  openFolder: (filePath: string) =>
+    ipcRenderer.invoke('shell:openFolder', filePath),
 
   getLogTail: () => ipcRenderer.invoke('log:getTail'),
   openLogFile: () => ipcRenderer.invoke('log:openFile'),

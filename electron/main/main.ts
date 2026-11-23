@@ -4,6 +4,7 @@ import {
   Menu,
   ipcMain,
   dialog,
+  shell,
   type MenuItemConstructorOptions,
 } from 'electron'
 import { isDev } from './utils'
@@ -176,6 +177,15 @@ ipcMain.handle(
     }
   }
 )
+
+ipcMain.handle('shell:openFolder', async (_, filePath: string) => {
+  try {
+    shell.showItemInFolder(filePath)
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: (error as Error).message }
+  }
+})
 
 // Create menu
 const template: MenuItemConstructorOptions[] = [

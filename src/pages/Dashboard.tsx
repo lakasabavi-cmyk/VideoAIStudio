@@ -2,7 +2,6 @@ import { FC, useState } from 'react'
 import { useVideoStore } from '@/stores/videoStore'
 import { useRenderQueue } from '@/stores/renderQueue'
 import { VideoPreview } from '@/components/VideoPreview'
-import { EditTools } from '@/components/EditTools'
 import { TimelineEditor } from '@/components/TimelineEditor'
 import {
   enqueueRemoveSilence,
@@ -143,9 +142,6 @@ export const Dashboard: FC = () => {
           <div className="mt-4 flex items-center gap-3 flex-wrap">
             {actionButtons(currentVideo)}
           </div>
-        )}
-        {currentVideo && (
-          <EditTools video={currentVideo} onMessage={setActionMessage} />
         )}
         <TimelineEditor onMessage={setActionMessage} />
         {actionMessage && (

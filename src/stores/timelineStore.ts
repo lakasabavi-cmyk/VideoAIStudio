@@ -18,6 +18,8 @@ export interface TimelineVideoClip {
   /** Smart Concat: start one frame in (drops the duplicated
    * last frame of the previous clip in a last-frame chain). */
   dropFirstFrame: boolean
+  /** Source frame rate, when known (frame-accurate splitting). */
+  fps?: number
 }
 
 export interface TimelineAudioClip {
@@ -34,6 +36,23 @@ export interface TimelineAudioClip {
 }
 
 export type LaneOffsets = Record<AudioKind, number>
+export type LaneVolumes = Record<AudioKind, number>
+export interface LaneFade {
+  fadeIn: number
+  fadeOut: number
+}
+export type LaneFades = Record<AudioKind, LaneFade>
+
+export const defaultLaneVolumes = (): LaneVolumes => ({
+  voice: 100,
+  music: 100,
+  sfx: 100,
+})
+export const defaultLaneFades = (): LaneFades => ({
+  voice: { fadeIn: 0, fadeOut: 0 },
+  music: { fadeIn: 0, fadeOut: 0 },
+  sfx: { fadeIn: 0, fadeOut: 0 },
+})
 
 interface TimelineState {
   videoClips: TimelineVideoClip[]
@@ -42,6 +61,13 @@ interface TimelineState {
   laneOffsets: LaneOffsets
   /** Volume of the video clips' own audio, 0-100 percent. */
   originalVolume: number
+  /** Video-track audio fades, seconds. */
+  videoFadeIn: number
+  videoFadeOut: number
+  /** Per-lane (track) volume, 0-100 percent. */
+  laneVolumes: LaneVolumes
+  /** Per-lane (track) audio fades, seconds. */
+  laneFades: LaneFades
   /** Ripple edit: trims/deletes pull later clips along. */
   ripple: boolean
   addVideoClip: (clip: TimelineVideoClip) => void
@@ -53,6 +79,11 @@ interface TimelineState {
   moveVideoClip: (from: number, to: number) => void
   moveAudioClip: (from: number, to: number) => void
   setLaneOffset: (kind: AudioKind, seconds: number) => void
+  setLaneVolume: (kind: AudioKind, percent: number) => void
+  setLaneFade: (kind: AudioKind, which: 'fadeIn' | 'fadeOut', seconds: number) => void
+  setVideoFades: (patch: { fadeIn?: number; fadeOut?: number }) => void
+  splitVideoClip: (id: string, atSeconds: number) => boolean
+  splitAudioClip: (id: string, atSeconds: number) => boolean
   setOriginalVolume: (percent: number) => void
   setRipple: (on: boolean) => void
   reflowVideo: () => void
@@ -115,7 +146,15 @@ export function normalizeTimeline(state: {
   audioClips: TimelineAudioClip[]
   laneOffsets?: LaneOffsets
   audioStartOffset?: number
-}): { videoClips: TimelineVideoClip[]; audioClips: TimelineAudioClip[]; laneOffsets: LaneOffsets } {
+}): {
+  videoClips: TimelineVideoClip[]
+  audioClips: TimelineAudioClip[]
+  laneOffsets: LaneOffsets
+  laneVolumes: LaneVolumes
+  laneFades: LaneFades
+  videoFadeIn: number
+  videoFadeOut: number
+} {
   let videoClips = state.videoClips.map((c) => ({
     ...c,
     dropFirstFrame: c.dropFirstFrame ?? false,
@@ -135,7 +174,25 @@ export function normalizeTimeline(state: {
     music: state.audioStartOffset ?? 0,
     sfx: 0,
   }
-  return { videoClips, audioClips, laneOffsets }
+  const partial = state as unknown as {
+    laneVolumes?: LaneVolumes
+    laneFades?: LaneFades
+    videoFadeIn?: number
+    videoFadeOut?: number
+  }
+  return {
+    videoClips,
+    audioClips,
+    laneOffsets,
+    laneVolumes: { ...defaultLaneVolumes(), ...(partial.laneVolumes ?? {}) },
+    laneFades: {
+      voice: { ...defaultLaneFades().voice, ...(partial.laneFades?.voice ?? {}) },
+      music: { ...defaultLaneFades().music, ...(partial.laneFades?.music ?? {}) },
+      sfx: { ...defaultLaneFades().sfx, ...(partial.laneFades?.sfx ?? {}) },
+    },
+    videoFadeIn: partial.videoFadeIn ?? 0,
+    videoFadeOut: partial.videoFadeOut ?? 0,
+  }
 }
 
 function move<T>(list: T[], from: number, to: number): T[] {
@@ -157,6 +214,10 @@ export const useTimelineStore = create<TimelineState>()(
       audioClips: [],
       laneOffsets: { voice: 0, music: 0, sfx: 0 },
       originalVolume: 100,
+      videoFadeIn: 0,
+      videoFadeOut: 0,
+      laneVolumes: defaultLaneVolumes(),
+      laneFades: defaultLaneFades(),
       ripple: true,
       addVideoClip: (clip) =>
         set((state) => {
@@ -214,6 +275,91 @@ export const useTimelineStore = create<TimelineState>()(
         set((state) => ({
           laneOffsets: { ...state.laneOffsets, [kind]: Math.max(0, seconds) },
         })),
+      setLaneVolume: (kind, percent) =>
+        set((state) => ({
+          laneVolumes: {
+            ...(state.laneVolumes ?? defaultLaneVolumes()),
+            [kind]: Math.max(0, Math.min(100, percent)),
+          },
+        })),
+      setLaneFade: (kind, which, seconds) =>
+        set((state) => {
+          const fades = state.laneFades ?? defaultLaneFades()
+          return {
+            laneFades: {
+              ...fades,
+              [kind]: {
+                ...fades[kind],
+                [which]: Math.max(0, seconds),
+              },
+            },
+          }
+        }),
+      setVideoFades: (patch) =>
+        set((state) => ({
+          videoFadeIn:
+            patch.fadeIn !== undefined
+              ? Math.max(0, patch.fadeIn)
+              : state.videoFadeIn ?? 0,
+          videoFadeOut:
+            patch.fadeOut !== undefined
+              ? Math.max(0, patch.fadeOut)
+              : state.videoFadeOut ?? 0,
+        })),
+      splitVideoClip: (id, at) => {
+        const state = get()
+        const clip = state.videoClips.find((c) => c.id === id)
+        if (!clip) return false
+        const kept = keptVideo(clip)
+        const local = at - clip.offset
+        if (local <= 0.05 || local >= kept - 0.05) return false
+        let sourceT = clip.trimStart + local
+        if (clip.dropFirstFrame && clip.fps) sourceT += 1 / clip.fps
+        sourceT = Math.min(sourceT, clip.trimEnd - 0.05)
+        const round3 = (n: number) => Math.round(n * 1000) / 1000
+        const right: TimelineVideoClip = {
+          ...clip,
+          id: `${id}-split-${Date.now()}`,
+          trimStart: round3(sourceT),
+          offset: clip.offset + local,
+          dropFirstFrame: false,
+        }
+        const left = { ...clip, trimEnd: round3(sourceT) }
+        const next = state.videoClips.flatMap((c) =>
+          c.id === id ? [left, right] : [c]
+        )
+        set({
+          videoClips: state.ripple ? flowOffsets(next) : next,
+        })
+        return true
+      },
+      splitAudioClip: (id, at) => {
+        const state = get()
+        const clip = state.audioClips.find((c) => c.id === id)
+        if (!clip) return false
+        const start = audioStartAbs(
+          clip,
+          state.audioClips,
+          state.laneOffsets
+        )
+        const local = at - start
+        const kept = keptAudio(clip)
+        if (local <= 0.05 || local >= kept - 0.05) return false
+        const round3 = (n: number) => Math.round(n * 1000) / 1000
+        const sourceT = round3(clip.trimStart + local)
+        const right: TimelineAudioClip = {
+          ...clip,
+          id: `${id}-split-${Date.now()}`,
+          trimStart: sourceT,
+        }
+        const left = { ...clip, trimEnd: sourceT }
+        set({
+          audioClips: state.audioClips.flatMap((c) =>
+            c.id === id ? [left, right] : [c]
+          ),
+        })
+        return true
+      },
       setOriginalVolume: (percent) => set({ originalVolume: percent }),
       setRipple: (on) => {
         set({ ripple: on })
@@ -235,8 +381,22 @@ export const useTimelineStore = create<TimelineState>()(
         audioClips,
         laneOffsets,
         originalVolume,
+        videoFadeIn,
+        videoFadeOut,
+        laneVolumes,
+        laneFades,
         ripple,
-      }) => ({ videoClips, audioClips, laneOffsets, originalVolume, ripple }),
+      }) => ({
+        videoClips,
+        audioClips,
+        laneOffsets,
+        originalVolume,
+        videoFadeIn,
+        videoFadeOut,
+        laneVolumes,
+        laneFades,
+        ripple,
+      }),
     }
   )
 )

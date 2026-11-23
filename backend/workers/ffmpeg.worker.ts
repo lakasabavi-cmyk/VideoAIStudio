@@ -19,6 +19,8 @@ import type {
   TimelineThumbsRequest,
   ComposeRequest,
   ThumbnailsRequest,
+  WaveformRequest,
+  FrameExtractRequest,
   ProcessResult,
 } from '@/types/ipc'
 
@@ -293,6 +295,42 @@ export function setupFFmpegWorkers() {
           request.count
         )
         return { success: true, data: paths }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
+      }
+    }
+  )
+
+  // Waveform peaks for the audio lanes (cached)
+  ipcMain.handle(
+    'media:waveform',
+    async (_, request: WaveformRequest) => {
+      try {
+        const peaks = await FFmpegService.extractWaveformPeaks(
+          request.path,
+          request.startSeconds,
+          request.endSeconds,
+          request.buckets
+        )
+        return { success: true, data: peaks }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
+      }
+    }
+  )
+
+  // Extract the first / last frame of a timeline clip
+  ipcMain.handle(
+    'media:extractFrame',
+    async (_, request: FrameExtractRequest) => {
+      try {
+        const saved = await FFmpegService.extractFrameAt(
+          request.path,
+          request.timeSeconds,
+          request.which,
+          request.rangeStartSeconds
+        )
+        return { success: true, data: saved }
       } catch (error) {
         return { success: false, error: (error as Error).message }
       }

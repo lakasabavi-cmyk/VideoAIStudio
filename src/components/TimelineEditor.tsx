@@ -11,6 +11,16 @@ import {
   Scissors,
   Magnet,
   Link2,
+  ArrowLeftRight,
+  Layers,
+  Crop,
+  Gauge,
+  RotateCw,
+  LayoutGrid,
+  FolderOpen,
+  Image as ImageIcon,
+  Zap,
+  FastForward,
 } from 'lucide-react'
 import {
   useTimelineStore,
@@ -25,15 +35,31 @@ import {
   type AudioKind,
 } from '@/stores/timelineStore'
 import { useVideoStore } from '@/stores/videoStore'
-import { enqueueCompose } from '@/lib/jobRunner'
+import {
+  enqueueCompose,
+  enqueueUpscale,
+  enqueueTrim,
+  enqueueSplit,
+  enqueueCrop,
+  enqueueSpeed,
+  enqueueTransform,
+  enqueueTimeline,
+} from '@/lib/jobRunner'
 import { toFileUrl } from '@/lib/files'
+import type { VideoFile } from '@/types'
 
 const VIDEO_EXTS = ['mp4', 'mov', 'mkv', 'avi', 'webm', 'flv', 'wmv']
 const AUDIO_EXTS = ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg']
-const LANES: { kind: AudioKind; label: string; color: string; ring: string }[] = [
-  { kind: 'voice', label: 'Voice', color: 'bg-emerald-600/30', ring: 'border-emerald-400' },
-  { kind: 'music', label: 'Music', color: 'bg-violet-600/30', ring: 'border-violet-400' },
-  { kind: 'sfx', label: 'SFX', color: 'bg-amber-600/30', ring: 'border-amber-400' },
+const LANES: {
+  kind: AudioKind
+  label: string
+  color: string
+  ring: string
+  wave: string
+}[] = [
+  { kind: 'voice', label: 'Voice', color: 'bg-emerald-600/30', ring: 'border-emerald-400', wave: '#34d399' },
+  { kind: 'music', label: 'Music', color: 'bg-violet-600/30', ring: 'border-violet-400', wave: '#a78bfa' },
+  { kind: 'sfx', label: 'SFX', color: 'bg-amber-600/30', ring: 'border-amber-400', wave: '#fbbf24' },
 ]
 
 function baseName(filePath: string): string {
@@ -49,6 +75,26 @@ function fmtT(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = seconds - m * 60
   return `${String(m).padStart(2, '0')}:${s.toFixed(1).padStart(4, '0')}`
+}
+function round2(v: number): number {
+  return Math.round(v * 100) / 100
+}
+
+/** Build a minimal VideoFile for the render-job helpers. */
+function clipFile(clip: TimelineVideoClip): VideoFile {
+  return {
+    id: clip.id,
+    path: clip.path,
+    name: clip.name,
+    duration: clip.duration,
+    width: clip.width,
+    height: clip.height,
+    fps: clip.fps ?? 0,
+    codec: '',
+    bitrate: '',
+    size: 0,
+    createdAt: new Date(),
+  }
 }
 
 /** Filmstrip of real frames across the clip's kept range. */
@@ -98,6 +144,61 @@ const Filmstrip: FC<{ clip: TimelineVideoClip }> = ({ clip }) => {
   )
 }
 
+/** Real audio waveform across the clip's kept range. */
+const Waveform: FC<{ clip: TimelineAudioClip; color: string }> = ({
+  clip,
+  color,
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const kept = keptAudio(clip)
+  const buckets = Math.max(16, Math.min(240, Math.round(kept * 12)))
+  const key = `${clip.path}|${clip.trimStart.toFixed(1)}|${clip.trimEnd.toFixed(1)}|${buckets}`
+  useEffect(() => {
+    let alive = true
+    const timer = setTimeout(async () => {
+      try {
+        const result = await window.electronAPI.extractWaveformPeaks({
+          path: clip.path,
+          startSeconds: clip.trimStart,
+          endSeconds: clip.trimEnd,
+          buckets,
+        })
+        if (!alive || !result.success || !result.data) return
+        const canvas = canvasRef.current
+        if (!canvas) return
+        const w = canvas.clientWidth
+        const h = canvas.clientHeight
+        if (w === 0 || h === 0) return
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return
+        ctx.clearRect(0, 0, w, h)
+        ctx.fillStyle = color
+        const peaks = result.data
+        const barW = w / peaks.length
+        peaks.forEach((p, i) => {
+          const bh = Math.max(1, p * (h - 6))
+          ctx.fillRect(
+            i * barW,
+            (h - bh) / 2,
+            Math.max(1, barW - 0.5),
+            bh
+          )
+        })
+      } catch {
+        /* waveform is decorative; the editor works without it */
+      }
+    }, 300)
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key])
+  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+}
+
 interface DragState {
   track: 'video' | 'audio'
   id: string
@@ -109,6 +210,15 @@ interface DragState {
   moved: boolean
 }
 
+interface MenuState {
+  x: number
+  y: number
+  track: 'video' | 'audio'
+  id: string
+}
+
+type ToolKind = 'trim' | 'split' | 'crop' | 'speed' | 'rotate' | 'sheet'
+
 interface TimelineEditorProps {
   onMessage: (message: string) => void
 }
@@ -119,6 +229,10 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
     videoClips,
     audioClips,
     laneOffsets,
+    laneVolumes,
+    laneFades,
+    videoFadeIn,
+    videoFadeOut,
     originalVolume,
     ripple,
   } = store
@@ -131,24 +245,42 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
   const [playing, setPlaying] = useState(false)
   const [activeClipId, setActiveClipId] = useState<string | null>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
+  const [menu, setMenu] = useState<MenuState | null>(null)
+  const [tool, setTool] = useState<ToolKind | null>(null)
+  const [toolTrim, setToolTrim] = useState({ start: 0, end: 0 })
+  const [toolSplitAt, setToolSplitAt] = useState(0)
+  const [toolSegLen, setToolSegLen] = useState(5)
+  const [toolSplitMode, setToolSplitMode] = useState<'at' | 'segments'>('at')
+  const [toolCrop, setToolCrop] = useState<'9:16' | '1:1' | '16:9' | 'custom'>('9:16')
+  const [toolCropW, setToolCropW] = useState(720)
+  const [toolCropH, setToolCropH] = useState(1280)
+  const [toolSpeed, setToolSpeed] = useState(2)
   const videoRef = useRef<HTMLVideoElement>(null)
   const playingRef = useRef(false)
   const pendingSeekRef = useRef<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Upgrade a v1-saved timeline (no offsets / kinds) on first mount.
+  // Upgrade an older saved timeline (missing fields) on first mount.
   useEffect(() => {
     const s = useTimelineStore.getState()
     const n = normalizeTimeline(s)
-    if (
+    const changed =
       JSON.stringify(n.videoClips) !== JSON.stringify(s.videoClips) ||
       JSON.stringify(n.audioClips) !== JSON.stringify(s.audioClips) ||
-      JSON.stringify(n.laneOffsets) !== JSON.stringify(s.laneOffsets)
-    ) {
+      JSON.stringify(n.laneOffsets) !== JSON.stringify(s.laneOffsets) ||
+      JSON.stringify(n.laneVolumes) !== JSON.stringify(s.laneVolumes ?? {}) ||
+      JSON.stringify(n.laneFades) !== JSON.stringify(s.laneFades ?? {}) ||
+      n.videoFadeIn !== (s.videoFadeIn ?? 0) ||
+      n.videoFadeOut !== (s.videoFadeOut ?? 0)
+    if (changed) {
       useTimelineStore.setState({
         videoClips: n.videoClips,
         audioClips: n.audioClips,
         laneOffsets: n.laneOffsets,
+        laneVolumes: n.laneVolumes,
+        laneFades: n.laneFades,
+        videoFadeIn: n.videoFadeIn,
+        videoFadeOut: n.videoFadeOut,
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,6 +297,22 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
   const selectedAudio = audioClips.find((c) => c.id === selectedAudioId)
   const activeClip =
     videoClips.find((c) => c.id === activeClipId) ?? videoClips[0]
+
+  // Seed the tool strip whenever a tool is opened or the clip changes.
+  useEffect(() => {
+    if (!selectedVideo || !tool) return
+    setToolTrim({ start: selectedVideo.trimStart, end: selectedVideo.trimEnd })
+    setToolSplitAt(
+      round2(
+        selectedVideo.trimStart +
+          Math.max(
+            0,
+            Math.min(playhead - selectedVideo.offset, keptVideo(selectedVideo))
+          )
+      )
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool, selectedVideo?.id])
 
   /* ---------------- playback ---------------- */
   const clipAt = (t: number): TimelineVideoClip | undefined =>
@@ -242,6 +390,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
       trimEnd: meta.duration ?? 0,
       offset: 0,
       dropFirstFrame: false,
+      fps: meta.fps ?? 0,
     })
   }
 
@@ -355,7 +504,6 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
     const finished = drag
     setDrag(null)
     if (finished.mode !== 'move' || !finished.moved) return
-    // Reorder: find the block whose center is nearest the drop point.
     const container = scrollRef.current
     if (!container) return
     const rect = container.getBoundingClientRect()
@@ -411,6 +559,10 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
         duration: a.duration,
       })),
       laneOffsets,
+      laneVolumes,
+      laneFades,
+      videoFadeIn,
+      videoFadeOut,
       originalVolume,
     })
     onMessage(
@@ -425,24 +577,154 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
     setActiveClipId(clip.id)
     setPlayhead(clip.offset)
     pendingSeekRef.current = clip.trimStart
-    setCurrentVideo({
-      id: clip.id,
-      path: clip.path,
-      name: clip.name,
-      duration: clip.duration,
-      width: clip.width,
-      height: clip.height,
-      fps: 0,
-      codec: '',
-      bitrate: '',
-      size: 0,
-      createdAt: new Date(),
-    })
+    setCurrentVideo(clipFile(clip))
   }
 
-  const tickStep = pxPerSec >= 20 ? 1 : pxPerSec >= 8 ? 2 : pxPerSec >= 4 ? 5 : 10
-  const ticks = []
-  for (let t = 0; t <= trackSeconds; t += tickStep) ticks.push(t)
+  /* ---------------- split at cursor ---------------- */
+  const videoClipUnderPlayhead = videoClips.find(
+    (c) =>
+      playhead > c.offset + 0.05 &&
+      playhead < c.offset + keptVideo(c) - 0.05
+  )
+  const audioClipUnderPlayhead = selectedAudio
+    ? (() => {
+        const start = audioStartAbs(selectedAudio, audioClips, laneOffsets)
+        return playhead > start + 0.05 &&
+          playhead < start + keptAudio(selectedAudio) - 0.05
+          ? selectedAudio
+          : undefined
+      })()
+    : undefined
+
+  const splitAtCursor = () => {
+    if (videoClipUnderPlayhead) {
+      if (store.splitVideoClip(videoClipUnderPlayhead.id, playhead)) {
+        onMessage(
+          `Split ${videoClipUnderPlayhead.name} at ${fmtT(playhead)}.`
+        )
+        return
+      }
+    }
+    if (audioClipUnderPlayhead) {
+      if (store.splitAudioClip(audioClipUnderPlayhead.id, playhead)) {
+        onMessage(`Split ${audioClipUnderPlayhead.name} at ${fmtT(playhead)}.`)
+        return
+      }
+    }
+    onMessage('Move the playhead inside a clip to split it there.')
+  }
+
+  /* ---------------- context menu actions ---------------- */
+  const menuClip =
+    menu?.track === 'video'
+      ? videoClips.find((c) => c.id === menu.id)
+      : undefined
+  const menuAudio =
+    menu?.track === 'audio'
+      ? audioClips.find((c) => c.id === menu.id)
+      : undefined
+
+  const doExtractFrame = async (
+    clip: TimelineVideoClip,
+    which: 'first' | 'last'
+  ) => {
+    const result = await window.electronAPI.extractFrameAt({
+      path: clip.path,
+      timeSeconds: which === 'first' ? clip.trimStart : clip.trimEnd,
+      which,
+      rangeStartSeconds: clip.trimStart,
+    })
+    onMessage(
+      result.success && result.data
+        ? `Saved ${which} frame → ${result.data}`
+        : `Extract frame failed: ${result.error ?? 'unknown error'}`
+    )
+  }
+
+  const doUpscale = (clip: TimelineVideoClip, rife: boolean) => {
+    const error = enqueueUpscale(clipFile(clip), rife)
+    onMessage(
+      error ??
+        `${rife ? 'RIFE + upscale' : 'Upscale'} queued for ${clip.name} — see Render Queue.`
+    )
+  }
+
+  const doOpenFolder = async (filePath: string) => {
+    const result = await window.electronAPI.openFolder(filePath)
+    if (!result.success) {
+      onMessage(`Open folder failed: ${result.error ?? 'unknown error'}`)
+    }
+  }
+
+  /* ---------------- tool strip actions ---------------- */
+  const runTool = (kind: ToolKind) => {
+    if (!selectedVideo) return
+    const file = clipFile(selectedVideo)
+    if (kind === 'trim') {
+      enqueueTrim(file, toolTrim.start, toolTrim.end)
+      onMessage(`Trim queued for ${selectedVideo.name} — see Render Queue.`)
+    } else if (kind === 'split') {
+      enqueueSplit(
+        file,
+        toolSplitMode === 'at'
+          ? { mode: 'at', atSeconds: toolSplitAt }
+          : { mode: 'segments', segmentSeconds: toolSegLen }
+      )
+      onMessage(`Split queued for ${selectedVideo.name} — see Render Queue.`)
+    } else if (kind === 'crop') {
+      const W = selectedVideo.width
+      const H = selectedVideo.height
+      let w = toolCropW
+      let h = toolCropH
+      if (toolCrop !== 'custom') {
+        const [rw, rh] = toolCrop.split(':').map(Number)
+        const ratio = rw / rh
+        if (W / H > ratio) {
+          h = H
+          w = Math.round((H * ratio) / 2) * 2
+        } else {
+          w = W
+          h = Math.round(W / ratio / 2) * 2
+        }
+      }
+      enqueueCrop(file, {
+        x: Math.max(0, Math.round((W - w) / 2)),
+        y: Math.max(0, Math.round((H - h) / 2)),
+        width: w,
+        height: h,
+      })
+      onMessage(`Crop queued for ${selectedVideo.name} — see Render Queue.`)
+    } else if (kind === 'speed') {
+      enqueueSpeed(file, toolSpeed)
+      onMessage(`Speed ${toolSpeed}x queued for ${selectedVideo.name} — see Render Queue.`)
+    } else if (kind === 'sheet') {
+      enqueueTimeline(file)
+      onMessage(`Timeline sheet queued for ${selectedVideo.name} — see Render Queue.`)
+    }
+  }
+
+  const runTransform = (op: 'rot90' | 'rot-90' | 'rot180' | 'flipH' | 'flipV') => {
+    if (!selectedVideo) return
+    enqueueTransform(clipFile(selectedVideo), op)
+    onMessage(`Transform queued for ${selectedVideo.name} — see Render Queue.`)
+  }
+
+  const tickStep =
+    pxPerSec >= 400
+      ? 0.1
+      : pxPerSec >= 160
+        ? 0.5
+        : pxPerSec >= 40
+          ? 1
+          : pxPerSec >= 16
+            ? 2
+            : pxPerSec >= 8
+              ? 5
+              : 10
+  const ticks: number[] = []
+  for (let t = 0; t <= trackSeconds; t += tickStep) {
+    ticks.push(Math.round(t * 10) / 10)
+  }
 
   const blockDragProps = (
     track: 'video' | 'audio',
@@ -457,6 +739,34 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
       }
     },
   })
+
+  const toolButtons: { kind: ToolKind; label: string; icon: typeof ArrowLeftRight }[] = [
+    { kind: 'trim', label: 'Trim', icon: ArrowLeftRight },
+    { kind: 'split', label: 'Split file', icon: Layers },
+    { kind: 'crop', label: 'Crop', icon: Crop },
+    { kind: 'speed', label: 'Speed', icon: Gauge },
+    { kind: 'rotate', label: 'Rotate / Flip', icon: RotateCw },
+    { kind: 'sheet', label: 'Sheet', icon: LayoutGrid },
+  ]
+
+  const fadeInput = (
+    value: number,
+    onChange: (v: number) => void,
+    title: string
+  ) => (
+    <input
+      type="number"
+      min={0}
+      step={0.5}
+      value={value}
+      title={title}
+      onChange={(e) => {
+        const v = parseFloat(e.target.value)
+        if (Number.isFinite(v)) onChange(Math.max(0, v))
+      }}
+      className="w-14 bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-gray-200"
+    />
+  )
 
   return (
     <div className="mt-6 border-t border-gray-700 pt-5">
@@ -473,11 +783,12 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
             Zoom
             <input
               type="range"
-              min={3}
-              max={80}
+              min={2}
+              max={600}
               value={pxPerSec}
               onChange={(e) => setPxPerSec(parseInt(e.target.value, 10))}
-              className="w-24 accent-indigo-500"
+              className="w-28 accent-indigo-500"
+              title="Zoom the timeline — far right reaches single frames"
             />
           </label>
           <button
@@ -499,7 +810,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                 ? 'bg-indigo-600 text-white'
                 : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
             }`}
-            title="Smart Concat: drop the first frame of every clip after the first (for last-frame chains)"
+            title="Smart Concat: remove the duplicated first frame of every clip after the first (for last-frame chains)"
           >
             <Link2 size={13} /> Smart Concat
           </button>
@@ -527,7 +838,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
       </div>
 
       {/* Preview + Inspector */}
-      <div className="flex gap-4 flex-wrap mb-4">
+      <div className="flex gap-4 flex-wrap mb-3">
         <div className="bg-black rounded-lg overflow-hidden border border-gray-700 w-[300px] shrink-0">
           {activeClip ? (
             <video
@@ -640,7 +951,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                     }
                     className="accent-indigo-500"
                   />
-                  Remove first frame (−1f)
+                  Remove duplicated first frame
                 </label>
                 <button
                   onClick={() => {
@@ -747,25 +1058,231 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
             </div>
           ) : (
             <div className="space-y-2 text-xs text-gray-400">
-              <p>Click a clip on the timeline to inspect and trim it.</p>
-              <label className="flex items-center gap-2">
-                Original audio {originalVolume}%
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={originalVolume}
-                  onChange={(e) => store.setOriginalVolume(parseInt(e.target.value, 10))}
-                  className="w-32 accent-indigo-500"
-                />
-              </label>
+              <p>Click a clip on the timeline to inspect and trim it. Right-click a clip for frame extraction, upscale, RIFE and more.</p>
               <p className="text-gray-600">
                 Drag a block to reorder it. Drag its left or right edge
-                to trim. Click the ruler to move the playhead.
+                to trim. Click the ruler to move the playhead. Zoom far
+                in to place the playhead frame by frame, then Split at
+                Cursor.
               </p>
             </div>
           )}
         </div>
+      </div>
+
+      {/* Icon tool bar — sits between the preview and the timeline;
+          the tools render new files from the selected clip. */}
+      <div className="bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 mb-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            onClick={splitAtCursor}
+            disabled={!videoClipUnderPlayhead && !audioClipUnderPlayhead}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/80 hover:bg-red-500 disabled:bg-gray-800 disabled:text-gray-500 text-white text-xs font-medium rounded-lg transition-colors"
+            title="Split the clip under the playhead into two clips, right on the timeline"
+          >
+            <Scissors size={14} /> Split at Cursor
+            <span className="font-mono text-[10px] opacity-80">{fmtT(playhead)}</span>
+          </button>
+          <div className="w-px h-6 bg-gray-700 mx-1" />
+          {toolButtons.map(({ kind, label, icon: Icon }) => (
+            <button
+              key={kind}
+              disabled={!selectedVideo}
+              onClick={() => setTool(tool === kind ? null : kind)}
+              className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg text-[10px] transition-colors disabled:opacity-35 ${
+                tool === kind
+                  ? 'bg-indigo-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-800'
+              }`}
+              title={
+                selectedVideo
+                  ? `${label} — renders a new file from ${selectedVideo.name}`
+                  : 'Select a video clip first'
+              }
+            >
+              <Icon size={16} />
+              {label}
+            </button>
+          ))}
+          <span className="text-[11px] text-gray-500 ml-2 truncate">
+            {selectedVideo
+              ? `Tools apply to: ${selectedVideo.name}`
+              : 'Select a video clip to use the tools'}
+          </span>
+        </div>
+
+        {tool && selectedVideo && (
+          <div className="flex items-center gap-3 flex-wrap mt-2 pt-2 border-t border-gray-800 text-xs text-gray-300">
+            {tool === 'trim' && (
+              <>
+                <label className="flex items-center gap-1">
+                  Start (s)
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.05}
+                    value={toolTrim.start}
+                    onChange={(e) => setToolTrim({ ...toolTrim, start: parseFloat(e.target.value) || 0 })}
+                    className="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-100"
+                  />
+                </label>
+                <label className="flex items-center gap-1">
+                  End (s)
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.05}
+                    value={toolTrim.end}
+                    onChange={(e) => setToolTrim({ ...toolTrim, end: parseFloat(e.target.value) || 0 })}
+                    className="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-100"
+                  />
+                </label>
+                <button
+                  onClick={() => runTool('trim')}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
+                >
+                  Render trimmed file
+                </button>
+                <span className="text-gray-500">Frame-accurate re-encode to a new .trim.mp4</span>
+              </>
+            )}
+            {tool === 'split' && (
+              <>
+                <select
+                  value={toolSplitMode}
+                  onChange={(e) => setToolSplitMode(e.target.value as 'at' | 'segments')}
+                  className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-100"
+                >
+                  <option value="at">Split at one point</option>
+                  <option value="segments">Split every N seconds</option>
+                </select>
+                {toolSplitMode === 'at' ? (
+                  <label className="flex items-center gap-1">
+                    At (s)
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.05}
+                      value={toolSplitAt}
+                      onChange={(e) => setToolSplitAt(parseFloat(e.target.value) || 0)}
+                      className="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-100"
+                    />
+                  </label>
+                ) : (
+                  <label className="flex items-center gap-1">
+                    Every (s)
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={toolSegLen}
+                      onChange={(e) => setToolSegLen(parseFloat(e.target.value) || 5)}
+                      className="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-100"
+                    />
+                  </label>
+                )}
+                <button
+                  onClick={() => runTool('split')}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
+                >
+                  Render split files
+                </button>
+                <span className="text-gray-500">Parts land in a “_parts” folder next to the clip</span>
+              </>
+            )}
+            {tool === 'crop' && (
+              <>
+                <select
+                  value={toolCrop}
+                  onChange={(e) => setToolCrop(e.target.value as typeof toolCrop)}
+                  className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-100"
+                >
+                  <option value="9:16">9:16 portrait</option>
+                  <option value="1:1">1:1 square</option>
+                  <option value="16:9">16:9 landscape</option>
+                  <option value="custom">Custom size</option>
+                </select>
+                {toolCrop === 'custom' && (
+                  <>
+                    <input
+                      type="number"
+                      value={toolCropW}
+                      onChange={(e) => setToolCropW(parseInt(e.target.value, 10) || 0)}
+                      className="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-100"
+                      title="Width"
+                    />
+                    <span className="text-gray-500">×</span>
+                    <input
+                      type="number"
+                      value={toolCropH}
+                      onChange={(e) => setToolCropH(parseInt(e.target.value, 10) || 0)}
+                      className="w-20 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-100"
+                      title="Height"
+                    />
+                  </>
+                )}
+                <button
+                  onClick={() => runTool('crop')}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
+                >
+                  Render cropped file
+                </button>
+                <span className="text-gray-500">Center crop of {selectedVideo.width}×{selectedVideo.height}</span>
+              </>
+            )}
+            {tool === 'speed' && (
+              <>
+                <select
+                  value={toolSpeed}
+                  onChange={(e) => setToolSpeed(parseFloat(e.target.value))}
+                  className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-100"
+                >
+                  {[0.25, 0.5, 0.75, 1.5, 2, 3, 4].map((f) => (
+                    <option key={f} value={f}>{f}x</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => runTool('speed')}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
+                >
+                  Render speed file
+                </button>
+              </>
+            )}
+            {tool === 'rotate' && (
+              <>
+                {(
+                  [
+                    ['rot90', 'Rotate 90°'],
+                    ['rot-90', 'Rotate −90°'],
+                    ['rot180', 'Rotate 180°'],
+                    ['flipH', 'Flip horizontal'],
+                    ['flipV', 'Flip vertical'],
+                  ] as const
+                ).map(([op, label]) => (
+                  <button
+                    key={op}
+                    onClick={() => runTransform(op)}
+                    className="px-3 py-1.5 bg-gray-800 hover:bg-indigo-600 text-gray-200 rounded-lg transition-colors"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </>
+            )}
+            {tool === 'sheet' && (
+              <>
+                <button
+                  onClick={() => runTool('sheet')}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
+                >
+                  Render timeline sheet
+                </button>
+                <span className="text-gray-500">One contact-sheet PNG of frames across the whole clip</span>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Quick add row */}
@@ -784,6 +1301,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                 trimEnd: currentVideo.duration,
                 offset: 0,
                 dropFirstFrame: false,
+                fps: currentVideo.fps,
               })
             }
             className="px-3 py-1 bg-gray-800 hover:bg-indigo-600 text-gray-200 text-xs rounded-lg transition-colors"
@@ -821,6 +1339,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                   trimEnd: v.duration,
                   offset: 0,
                   dropFirstFrame: false,
+                  fps: v.fps,
                 })
                 setImportPick('')
               }}
@@ -855,7 +1374,9 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                 className="absolute top-0 h-full border-l border-gray-700"
                 style={{ left: t * pxPerSec }}
               >
-                <span className="text-[9px] text-gray-500 pl-1">{t}s</span>
+                <span className="text-[9px] text-gray-500 pl-1">
+                  {tickStep < 1 ? `${t.toFixed(1)}s` : `${t}s`}
+                </span>
               </div>
             ))}
           </div>
@@ -866,6 +1387,33 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
             style={{ left: playhead * pxPerSec }}
           >
             <div className="w-2.5 h-2.5 bg-red-500 rounded-sm -ml-[5px] mt-0.5 rotate-45" />
+          </div>
+
+          {/* Video track header: track volume + fades */}
+          <div className="flex items-center gap-3 px-2 pt-1.5 flex-wrap">
+            <span className="text-[10px] uppercase tracking-wide text-gray-400 w-12">
+              Video
+            </span>
+            <label className="text-[10px] text-gray-500 flex items-center gap-1.5">
+              Vol {originalVolume}%
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={originalVolume}
+                onChange={(e) => store.setOriginalVolume(parseInt(e.target.value, 10))}
+                className="w-20 accent-indigo-500"
+                title="Volume of the video track's own audio"
+              />
+            </label>
+            <label className="text-[10px] text-gray-500 flex items-center gap-1">
+              Fade in (s)
+              {fadeInput(videoFadeIn, (v) => store.setVideoFades({ fadeIn: v }), 'Video-track audio fade in, seconds')}
+            </label>
+            <label className="text-[10px] text-gray-500 flex items-center gap-1">
+              Fade out (s)
+              {fadeInput(videoFadeOut, (v) => store.setVideoFades({ fadeOut: v }), 'Video-track audio fade out, seconds')}
+            </label>
           </div>
 
           {/* Video track */}
@@ -883,6 +1431,16 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                   {...blockDragProps('video', clip)}
                   onClick={() => {
                     if (!drag?.moved) selectVideoClip(clip)
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    selectVideoClip(clip)
+                    setMenu({
+                      x: Math.min(e.clientX, window.innerWidth - 250),
+                      y: e.clientY,
+                      track: 'video',
+                      id: clip.id,
+                    })
                   }}
                   style={{
                     left: clip.offset * pxPerSec,
@@ -929,9 +1487,11 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
           {/* Audio lanes */}
           {LANES.map((lane) => {
             const laneClips = audioClips.filter((a) => a.kind === lane.kind)
+            const laneVolume = laneVolumes?.[lane.kind] ?? 100
+            const laneFade = laneFades?.[lane.kind] ?? { fadeIn: 0, fadeOut: 0 }
             return (
               <div key={lane.kind} className="border-b border-gray-800 last:border-b-0">
-                <div className="flex items-center gap-2 px-2 pt-1.5">
+                <div className="flex items-center gap-3 px-2 pt-1.5 flex-wrap">
                   <span className="text-[10px] uppercase tracking-wide text-gray-400 w-12">
                     {lane.label}
                   </span>
@@ -949,6 +1509,26 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                       className="w-16 bg-gray-800 border border-gray-700 rounded px-1.5 py-0.5 text-gray-200"
                     />
                   </label>
+                  <label className="text-[10px] text-gray-500 flex items-center gap-1.5">
+                    Vol {laneVolume}%
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={laneVolume}
+                      onChange={(e) => store.setLaneVolume(lane.kind, parseInt(e.target.value, 10))}
+                      className="w-20 accent-emerald-500"
+                      title={`${lane.label} track volume`}
+                    />
+                  </label>
+                  <label className="text-[10px] text-gray-500 flex items-center gap-1">
+                    Fade in (s)
+                    {fadeInput(laneFade.fadeIn, (v) => store.setLaneFade(lane.kind, 'fadeIn', v), `${lane.label} track fade in, seconds`)}
+                  </label>
+                  <label className="text-[10px] text-gray-500 flex items-center gap-1">
+                    Fade out (s)
+                    {fadeInput(laneFade.fadeOut, (v) => store.setLaneFade(lane.kind, 'fadeOut', v), `${lane.label} track fade out, seconds`)}
+                  </label>
                   <button
                     onClick={() => void handlePlus(lane.kind)}
                     className="flex items-center gap-0.5 text-[11px] px-2 py-0.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded transition-colors"
@@ -957,7 +1537,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                   </button>
                 </div>
                 <div
-                  className="relative h-[46px]"
+                  className="relative h-[52px]"
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => void handleFileDrop(e, lane.kind)}
                 >
@@ -975,6 +1555,17 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                             setSelectedVideoId(null)
                           }
                         }}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          setSelectedAudioId(clip.id)
+                          setSelectedVideoId(null)
+                          setMenu({
+                            x: Math.min(e.clientX, window.innerWidth - 250),
+                            y: e.clientY,
+                            track: 'audio',
+                            id: clip.id,
+                          })
+                        }}
                         style={{
                           left: start * pxPerSec,
                           width: Math.max(kept * pxPerSec, 14),
@@ -986,11 +1577,11 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                         }`}
                         title={clip.path}
                       >
-                        <div className="px-1.5 py-1 pointer-events-none">
-                          <p className="text-[10px] text-white truncate">{clip.name}</p>
-                          <p className="text-[9px] text-gray-300">
-                            {fmtT(kept)} • vol {clip.volume}%
-                          </p>
+                        <Waveform clip={clip} color={lane.wave} />
+                        <div className="absolute top-0 left-0 bg-black/55 rounded-br px-1.5 py-0.5 pointer-events-none max-w-full">
+                          <span className="text-[10px] text-white truncate block">
+                            {clip.name} • {fmtT(kept)} • vol {clip.volume}%
+                          </span>
                         </div>
                         <div
                           data-zone="trim-left"
@@ -1012,12 +1603,96 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
       <p className="text-[11px] text-gray-600 mt-2">
         Clips are normalized to the first video clip's size and frame
         rate. With Ripple off, trims and deletions leave black gaps.
-        The movie lands next to the first clip as “.timeline.mp4”.
+        Right-click any clip for frame extraction, upscale, RIFE and
+        its folder. The movie lands next to the first clip as
+        “.timeline.mp4”.
       </p>
+
+      {/* Right-click context menu */}
+      {menu && (menuClip || menuAudio) && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setMenu(null)}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setMenu(null)
+          }}
+        >
+          <div
+            className="absolute w-[240px] bg-gray-800 border border-gray-600 rounded-lg shadow-2xl py-1 text-xs text-gray-200"
+            style={{ left: menu.x, top: menu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-gray-500 truncate">
+              {menuClip?.name ?? menuAudio?.name}
+            </p>
+            {menuClip && (
+              <>
+                <button
+                  onClick={() => {
+                    setMenu(null)
+                    void doExtractFrame(menuClip, 'first')
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-700 text-left"
+                >
+                  <ImageIcon size={13} /> Extract First Frame
+                </button>
+                <button
+                  onClick={() => {
+                    setMenu(null)
+                    void doExtractFrame(menuClip, 'last')
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-700 text-left"
+                >
+                  <ImageIcon size={13} /> Extract Last Frame
+                </button>
+                <button
+                  onClick={() => {
+                    setMenu(null)
+                    doUpscale(menuClip, false)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-700 text-left"
+                >
+                  <Zap size={13} /> Upscale
+                </button>
+                <button
+                  onClick={() => {
+                    setMenu(null)
+                    doUpscale(menuClip, true)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-700 text-left"
+                >
+                  <FastForward size={13} /> RIFE
+                </button>
+                <button
+                  onClick={() => {
+                    store.updateVideoClip(menuClip.id, {
+                      dropFirstFrame: !menuClip.dropFirstFrame,
+                    })
+                    setMenu(null)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-700 text-left"
+                >
+                  <Scissors size={13} /> Remove duplicated first frame
+                  {menuClip.dropFirstFrame && (
+                    <span className="ml-auto text-indigo-300">on</span>
+                  )}
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => {
+                const p = (menuClip ?? menuAudio)!.path
+                setMenu(null)
+                void doOpenFolder(p)
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-gray-700 text-left"
+            >
+              <FolderOpen size={13} /> Open folder
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
-}
-
-function round2(v: number): number {
-  return Math.round(v * 100) / 100
 }

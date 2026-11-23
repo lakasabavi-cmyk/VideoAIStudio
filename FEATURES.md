@@ -185,41 +185,62 @@ for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
 
 ## Timeline Editor (Dashboard, under Current Video)
 
-CapCut-style composition, added 2026-11-23, upgraded to the pro
-layout the same day. State lives in `src/stores/timelineStore.ts`
-(zustand persist, key `videoai-timeline`; v1 saves are upgraded by
+CapCut-style composition, added 2026-11-23 and upgraded twice the
+same day (pro layout, then the tool-bar / waveform / context-menu
+pass). State lives in `src/stores/timelineStore.ts` (zustand
+persist, key `videoai-timeline`; older saves are upgraded by
 `normalizeTimeline` on mount). Video clips carry an absolute
-`offset` and a `dropFirstFrame` flag; audio clips live on one of
-three lanes — Voice, Music, SFX — each lane with its own start
-offset, and play end to end within the lane.
+`offset`, a `dropFirstFrame` flag and their source `fps`; audio
+clips live on one of three lanes — Voice, Music, SFX — each lane
+with its own start offset, and play end to end within the lane.
 
 Editor surface:
 - Real filmstrip thumbnails inside the video blocks
   (`FFmpegService.extractThumbnails`, cached under
-  userData/thumb-cache, keyed by path + kept range + count).
+  userData/thumb-cache) and real waveform peaks inside the audio
+  blocks (`extractWaveformPeaks`, mono 4 kHz PCM peaks cached
+  under userData/wave-cache).
 - Ruler + red playhead; the editor has its own preview player —
   playback walks the clips, switching sources at clip boundaries,
-  and the ruler seeks.
-- Zoom slider (px per second), trim handles on both edges of
-  every block (drag), drag a block body to reorder, and a Clip
-  Inspector panel (in/out points, position, lane, volume,
-  remove-first-frame, remove clip).
+  and the ruler seeks. Zoom goes to 600 px/s (frame level).
+- Trim handles on both edges of every block (drag), drag a block
+  body to reorder, and a Clip Inspector panel (in/out points,
+  position, lane, volume, remove-duplicated-first-frame, remove
+  clip).
+- Split at Cursor: splits the clip under the playhead into two
+  timeline clips (video or the selected audio clip), honoring the
+  dropped first frame when the clip's fps is known.
+- Icon tool bar between the preview and the timeline (this
+  replaced the old Edit Tools panel on the Dashboard): Trim,
+  Split file, Crop, Speed, Rotate/Flip and Timeline Sheet render
+  new files from the selected clip through the usual Render
+  Queue jobs.
+- Right-click menu on every clip: Extract First Frame, Extract
+  Last Frame (both saved as PNGs into the "first frame" folder
+  next to the source, via `extractFrameAt`), Upscale, RIFE
+  (upscale with RIFE forced on), Remove duplicated first frame
+  (toggle), Open folder (`shell:openFolder`).
+- Track controls: the video track has a volume slider and
+  fade-in/out; each audio lane has its own volume and fade-in/out
+  on top of per-clip volume. Fades are applied per track in the
+  compose graph (lanes are submixed, then faded, then mixed).
 - Ripple Edit toggle: on = trims/deletes/reorders reflow the
   track end to end; off = offsets stay, gaps render as black +
   silence, and a clip may not grow into its neighbour.
 - Smart Concat toggle: one click sets `dropFirstFrame` on every
-  clip after the first (the per-clip -1f control is in the
-  Inspector and shown as a badge). The plain Merge button remains
-  the dedicated chained-clip tool; the timeline is fully manual.
+  clip after the first (the per-clip control is in the Inspector
+  and the context menu, shown as a −1f badge). The plain Merge
+  button remains the dedicated chained-clip tool; the timeline
+  is fully manual.
 
 **Build Movie** (the button's name; job kind `compose`) ->
-`FFmpegService.composeTimeline` v2: segments are flattened in
-time order with black gap fillers, every clip is normalized to
-the first clip (size, fps, yuv420p) and trimmed to its kept
-range, segment audio is locked to the segment's video length
-(same rule as merge), and the audio bed (all lanes resolved to
-absolute starts by the runner) is mixed over with adelay + amix
-normalize=0, final mix `duration=first`. Output:
-`<first clip>.timeline.mp4`. Audio durations/trims come from
-`media:duration` (`getMediaDuration`), because
+`FFmpegService.composeTimeline`: segments are flattened in time
+order with black gap fillers, every clip is normalized to the
+first clip (size, fps, yuv420p) and trimmed to its kept range,
+segment audio is locked to the segment's video length (same rule
+as merge), and the audio bed (lanes resolved to absolute starts
+by the runner, volumes multiplied by lane volume) is mixed over
+with adelay + amix normalize=0, final mix `duration=first`.
+Output: `<first clip>.timeline.mp4`. Audio durations/trims come
+from `media:duration` (`getMediaDuration`), because
 `getVideoMetadata` rejects audio-only files.

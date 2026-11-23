@@ -171,10 +171,33 @@ export interface ComposeRequest {
     startAtSeconds: number
     startSeconds: number
     endSeconds: number
+    lane?: string
   }[]
+  /** Per-lane (track) fade durations in seconds. */
+  audioLaneFades?: Record<
+    string,
+    { fadeInSeconds: number; fadeOutSeconds: number }
+  >
   /** Volume of the clips' own audio, 0-1 (0 = muted). */
   originalVolume: number
+  /** Video-track audio fades in seconds. */
+  originalFadeInSeconds?: number
+  originalFadeOutSeconds?: number
   outputPath: string
+}
+
+export interface WaveformRequest {
+  path: string
+  startSeconds: number
+  endSeconds: number
+  buckets: number
+}
+
+export interface FrameExtractRequest {
+  path: string
+  timeSeconds: number
+  which: 'first' | 'last'
+  rangeStartSeconds: number
 }
 
 export interface ThumbnailsRequest {
