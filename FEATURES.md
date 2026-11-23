@@ -477,3 +477,20 @@ from `media:duration` (`getMediaDuration`), because
   invents gibberish lyrics over instrumental-only audio
   on the no-VAD pass — that pass exists for singing, so
   it stays; large-v3 on real vocals is the target case.
+  v0.3.8: the empty-transcript mystery is solved, and it was
+  the model, not the settings or the GPU. Controlled tests
+  on Hung's 8 s garage singing clip (loud, continuous
+  vocals): the medium model transcribes the real lyrics
+  under BOTH the old and the v0.3.7 parameter sets, while
+  large-v3 — on CPU here exactly as on Hung's GPU —
+  outputs ONLY the Ghien Mi Go subscribe hallucination
+  for the whole clip, at logprob -0.07. v0.3.7's phrase
+  filter correctly dropped that sole segment, leaving an
+  empty transcript. large-v3 hallucinates over AI-sung
+  Vietnamese where medium hears the words. Changes: the
+  default model is now medium (store, Settings fallback,
+  transcribe.py), the Settings labels say why, and the
+  hallucination filter now reports dropped segments as a
+  STAGE line with the remedy instead of dropping silently.
+  Hung's saved setting still says large-v3 — he must
+  switch the dropdown to medium once.

@@ -39,7 +39,7 @@ export const useSettingsStore = create<SettingsState>()(
       rifePath: '',
       rifeModelPath: '',
       whisperPythonPath: '',
-      whisperModel: 'large-v3',
+      whisperModel: 'medium',
       whisperLanguage: 'vi',
       updateSettings: (partial) => set(partial),
     }),

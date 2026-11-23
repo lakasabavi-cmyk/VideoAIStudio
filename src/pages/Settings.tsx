@@ -29,7 +29,7 @@ export const Settings: FC = () => {
     rifePath: stored.rifePath,
     rifeModelPath: stored.rifeModelPath,
     whisperPythonPath: stored.whisperPythonPath ?? '',
-    whisperModel: stored.whisperModel ?? 'large-v3',
+    whisperModel: stored.whisperModel ?? 'medium',
     whisperLanguage: stored.whisperLanguage ?? 'vi',
   })
   const [saved, setSaved] = useState(false)
@@ -521,7 +521,9 @@ export const Settings: FC = () => {
             setup: run <code>tools\setup-whisper.bat</code> from the
             app folder, then paste the python.exe path it prints.
             The model downloads automatically on the first
-            transcription (large-v3 is about 3 GB).
+            transcription (medium is about 1.5 GB). Prefer medium
+            for singing: large-v3 is stronger on clean speech but
+            hallucinates stock phrases over music and AI vocals.
           </p>
           <div>
             <label className="text-sm text-gray-300">
@@ -548,9 +550,9 @@ export const Settings: FC = () => {
                   }
                   className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
                 >
-                  <option value="large-v3">large-v3 (best Vietnamese)</option>
+                  <option value="medium">medium (recommended — reliable on singing)</option>
+                  <option value="large-v3">large-v3 (strong speech, hallucinates on singing)</option>
                   <option value="large-v3-turbo">large-v3-turbo (faster)</option>
-                  <option value="medium">medium</option>
                   <option value="small">small</option>
                   <option value="base">base</option>
                   <option value="tiny">tiny (test only)</option>

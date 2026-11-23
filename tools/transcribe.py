@@ -82,7 +82,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--model", default="large-v3")
+    parser.add_argument("--model", default="medium")
     parser.add_argument("--language", default="vi",
                         help="'vi', 'en', ... or 'auto' to detect")
     args = parser.parse_args()
@@ -128,6 +128,7 @@ def main():
             )
             duration = float(info.duration or 0)
             collected = []
+            dropped = 0
             for seg in segments_iter:
                 words = []
                 for w in seg.words or []:
@@ -145,6 +146,7 @@ def main():
                     if any(p.search(seg_text)
                            for p in HALLUCINATION_PATTERNS):
                         words = []
+                        dropped += 1
                 if words:
                     collected.append({
                         "start": round(float(seg.start), 3),
@@ -153,6 +155,15 @@ def main():
                     })
                 if duration > 0:
                     progress(seg.end / duration * 100)
+            if dropped:
+                # Never drop silently: an empty transcript with no
+                # explanation cost a long debugging round. Say what
+                # was dropped and what to do about it.
+                stage(f"Dropped {dropped} hallucinated segment(s) — "
+                      f"stock phrases this model invents over music. "
+                      f"If the transcript is empty, this model is "
+                      f"hallucinating over the vocals; switch to the "
+                      f"medium model in Settings and transcribe again.")
             return collected, info, duration
 
         stage("Transcribing")
