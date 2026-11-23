@@ -1,6 +1,6 @@
 {
   "name": "video-ai-studio",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Professional video editing and AI processing studio",
   "main": "dist/electron/main.cjs",
   "type": "module",

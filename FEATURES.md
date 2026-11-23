@@ -444,3 +444,20 @@ from `media:duration` (`getMediaDuration`), because
   out the newest release (3.14 again), so "install 3.13
   from python.org" needs the winget id or the specific
   release page, not the front-page button.
+  v0.3.6: first real transcription on Hung's machine died
+  with "Library cublas64_12.dll is not found" — two causes.
+  (1) ctranslate2 loads its CUDA libraries lazily, so the
+  error surfaces mid-transcription, while v0.3.0's
+  CUDA-to-CPU fallback only guarded the model load.
+  transcribe.py now wraps the WHOLE attempt (load +
+  transcribe) per device, so any GPU failure retries on
+  CPU and still delivers a transcript (proven on this VM:
+  CUDA attempt failed, CPU retry produced the expected
+  4 segments / 31 words on the Lap Dong clip). (2) The
+  CUDA runtime DLLs were never installed: setup-whisper.bat
+  now also installs nvidia-cublas-cu12==12.9.2.10 and
+  nvidia-cudnn-cu12==9.28.1.4 (pinned: the newest cublas
+  release ships no Windows wheel; 12.9.2.10 is the newest
+  that does), and transcribe.py registers every
+  nvidia/*/bin folder under site-packages with
+  os.add_dll_directory so the GPU path can find them.

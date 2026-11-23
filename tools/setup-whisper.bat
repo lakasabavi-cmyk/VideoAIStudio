@@ -85,7 +85,11 @@ whisper-env\Scripts\python.exe -m pip install --upgrade pip
 REM --only-binary: never fall back to compiling from source.
 REM av must stay below 14: faster-whisper passes a decode option
 REM that PyAV 14 removed, and transcription fails without the pin.
-whisper-env\Scripts\python.exe -m pip install --only-binary=:all: faster-whisper "av<14"
+REM The two nvidia packages carry the CUDA runtime DLLs that
+REM ctranslate2 loads at transcription time - cublas64_12.dll
+REM and cuDNN. Without them the GPU path dies mid-transcription
+REM with "Library cublas64_12.dll is not found".
+whisper-env\Scripts\python.exe -m pip install --only-binary=:all: faster-whisper "av<14" "nvidia-cublas-cu12==12.9.2.10" "nvidia-cudnn-cu12==9.28.1.4"
 if %errorlevel% neq 0 (
   echo.
   echo pip could not find prebuilt packages for this Python.
