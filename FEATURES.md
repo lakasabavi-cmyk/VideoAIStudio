@@ -425,3 +425,13 @@ from `media:duration` (`getMediaDuration`), because
   is now parenthesis-free (the rule is noted in the bat
   itself), and the venv-version probe moved out of its
   block into a single-line if.
+  v0.3.4: the v0.3.2/v0.3.3 pushes stored the bat blob
+  with raw CRLF bytes (verified on the remote: 89 CRLF,
+  0 bare LF). With .gitattributes text normalization,
+  git cleans the Windows working copy to LF before
+  comparing, so the file showed as modified forever —
+  Discard restored the same bytes and every Pull stayed
+  blocked on Hung's machine. The blob is now stored
+  LF-only (canonical form); eol=crlf still produces a
+  CRLF file on Windows checkout, and status stays clean.
+  Rule: never push CRLF bytes for a text file again.
