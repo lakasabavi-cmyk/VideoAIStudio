@@ -51,9 +51,9 @@ function createWindow() {
 
   mainWindow.loadURL(startUrl)
 
-  if (isDev) {
-    mainWindow.webContents.openDevTools()
-  }
+  // DevTools is NOT opened automatically (it used to pop up on
+  // every launch). Press F12 or Ctrl+Shift+I in the app window
+  // when you need it.
 
   mainWindow.on('closed', () => {
     mainWindow = null
