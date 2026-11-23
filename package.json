@@ -6,6 +6,7 @@
     "type": "module",
     "homepage": "./",
     "scripts": {
+        "predev": "npm install --no-audit --no-fund",
         "dev": "concurrently \"npm run vite\" \"npm run electron\"",
         "vite": "vite",
         "electron": "npm run build:electron && npm run build:preload && wait-on http://localhost:5173 && electron .",
