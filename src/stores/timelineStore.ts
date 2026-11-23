@@ -78,6 +78,14 @@ interface TimelineState {
   removeAudioClip: (id: string) => void
   moveVideoClip: (from: number, to: number) => void
   moveAudioClip: (from: number, to: number) => void
+  /** Undo history (session only, never persisted). */
+  past: TimelineSnapshot[]
+  future: TimelineSnapshot[]
+  undo: () => void
+  redo: () => void
+  beginBatch: () => void
+  endBatch: () => void
+  resetHistory: () => void
   setLaneOffset: (kind: AudioKind, seconds: number) => void
   setLaneVolume: (kind: AudioKind, percent: number) => void
   setLaneFade: (kind: AudioKind, which: 'fadeIn' | 'fadeOut', seconds: number) => void
@@ -205,6 +213,46 @@ function move<T>(list: T[], from: number, to: number): T[] {
   return next
 }
 
+export interface TimelineSnapshot {
+  videoClips: TimelineVideoClip[]
+  audioClips: TimelineAudioClip[]
+  laneOffsets: LaneOffsets
+  laneVolumes: LaneVolumes
+  laneFades: LaneFades
+  videoFadeIn: number
+  videoFadeOut: number
+  originalVolume: number
+  ripple: boolean
+}
+
+export function snapshotOf(state: TimelineSnapshot): TimelineSnapshot {
+  return {
+    videoClips: state.videoClips,
+    audioClips: state.audioClips,
+    laneOffsets: state.laneOffsets,
+    laneVolumes: state.laneVolumes ?? defaultLaneVolumes(),
+    laneFades: state.laneFades ?? defaultLaneFades(),
+    videoFadeIn: state.videoFadeIn ?? 0,
+    videoFadeOut: state.videoFadeOut ?? 0,
+    originalVolume: state.originalVolume,
+    ripple: state.ripple,
+  }
+}
+
+const snapshotKey = (s: TimelineSnapshot) => JSON.stringify(snapshotOf(s))
+
+// History plumbing shared by the store actions and the change
+// subscription below. `applyingHistory` stops undo/redo writes
+// from recording themselves; `batchBase` holds the pre-drag
+// snapshot while a pointer drag batches its many small updates
+// into a single undo step; rapid bursts (typing in a number
+// field, sliding a volume) coalesce into one step as well.
+let applyingHistory = false
+let batchBase: TimelineSnapshot | null = null
+let lastPushAt = 0
+const HISTORY_LIMIT = 60
+const COALESCE_MS = 700
+
 // Persisted: a timeline is a project the user builds up over time,
 // unlike the render queue it must survive a restart.
 export const useTimelineStore = create<TimelineState>()(
@@ -219,6 +267,55 @@ export const useTimelineStore = create<TimelineState>()(
       laneVolumes: defaultLaneVolumes(),
       laneFades: defaultLaneFades(),
       ripple: true,
+      past: [],
+      future: [],
+      undo: () => {
+        const state = get()
+        if (state.past.length === 0) return
+        const previous = state.past[state.past.length - 1]
+        applyingHistory = true
+        set({
+          ...previous,
+          past: state.past.slice(0, -1),
+          future: [snapshotOf(state), ...state.future].slice(
+            0,
+            HISTORY_LIMIT
+          ),
+        })
+        applyingHistory = false
+      },
+      redo: () => {
+        const state = get()
+        if (state.future.length === 0) return
+        const [next, ...rest] = state.future
+        applyingHistory = true
+        set({
+          ...next,
+          past: [...state.past, snapshotOf(state)].slice(-HISTORY_LIMIT),
+          future: rest,
+        })
+        applyingHistory = false
+      },
+      beginBatch: () => {
+        if (!batchBase) batchBase = snapshotOf(get())
+      },
+      endBatch: () => {
+        if (!batchBase) return
+        const base = batchBase
+        batchBase = null
+        const state = get()
+        if (snapshotKey(state) === snapshotKey(base)) return
+        lastPushAt = Date.now()
+        set({
+          past: [...state.past, base].slice(-HISTORY_LIMIT),
+          future: [],
+        })
+      },
+      resetHistory: () => {
+        batchBase = null
+        lastPushAt = 0
+        set({ past: [], future: [] })
+      },
       addVideoClip: (clip) =>
         set((state) => {
           const atEnd = { ...clip, offset: videoTrackEnd(state.videoClips) }
@@ -400,6 +497,21 @@ export const useTimelineStore = create<TimelineState>()(
     }
   )
 )
+
+// Record every real change as an undo step. Selection and
+// playback do not live in this store, so anything that changes
+// the snapshot here is an edit worth undoing.
+useTimelineStore.subscribe((state, prevState) => {
+  if (applyingHistory || batchBase) return
+  if (snapshotKey(state) === snapshotKey(prevState)) return
+  const now = Date.now()
+  if (now - lastPushAt < COALESCE_MS && state.past.length > 0) return
+  lastPushAt = now
+  useTimelineStore.setState({
+    past: [...state.past, snapshotOf(prevState)].slice(-HISTORY_LIMIT),
+    future: [],
+  })
+})
 
 /** Total composed duration = end of the video track. */
 export function timelineDuration(clips: TimelineVideoClip[]): number {

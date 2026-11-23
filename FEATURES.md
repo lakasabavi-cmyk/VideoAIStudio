@@ -224,6 +224,11 @@ Editor surface:
   fade-in/out; each audio lane has its own volume and fade-in/out
   on top of per-clip volume. Fades are applied per track in the
   compose graph (lanes are submixed, then faded, then mixed).
+- Undo / Redo: every timeline edit is recorded as a snapshot
+  step (up to 60) — toolbar buttons plus Ctrl+Z / Ctrl+Shift+Z /
+  Ctrl+Y (text fields keep their native undo). A pointer drag
+  batches into one step; rapid bursts like typing or sliding
+  coalesce into one step. History is session-only, not persisted.
 - Ripple Edit toggle: on = trims/deletes/reorders reflow the
   track end to end; off = offsets stay, gaps render as black +
   silence, and a clip may not grow into its neighbour.

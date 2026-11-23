@@ -21,6 +21,8 @@ import {
   Image as ImageIcon,
   Zap,
   FastForward,
+  Undo2,
+  Redo2,
 } from 'lucide-react'
 import {
   useTimelineStore,
@@ -235,6 +237,8 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
     videoFadeOut,
     originalVolume,
     ripple,
+    past,
+    future,
   } = store
   const { videos, currentVideo, setCurrentVideo } = useVideoStore()
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null)
@@ -283,7 +287,34 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
         videoFadeOut: n.videoFadeOut,
       })
     }
+    useTimelineStore.getState().resetHistory()
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y — but leave text fields alone
+  // so typing in a number input keeps its native undo.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const target = e.target as HTMLElement
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT'
+      ) {
+        return
+      }
+      const key = e.key.toLowerCase()
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        useTimelineStore.getState().undo()
+      } else if ((key === 'z' && e.shiftKey) || key === 'y') {
+        e.preventDefault()
+        useTimelineStore.getState().redo()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   const total = videoTrackEnd(videoClips)
@@ -450,6 +481,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
   ) => {
     e.preventDefault()
     ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+    store.beginBatch()
     setDrag({
       track,
       id: clip.id,
@@ -503,6 +535,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
     if (!drag) return
     const finished = drag
     setDrag(null)
+    store.endBatch()
     if (finished.mode !== 'move' || !finished.moved) return
     const container = scrollRef.current
     if (!container) return
@@ -779,6 +812,22 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
           </span>
         </h3>
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => store.undo()}
+            disabled={past.length === 0}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-35 text-gray-200 text-xs rounded-lg transition-colors"
+            title="Undo the last timeline edit (Ctrl+Z)"
+          >
+            <Undo2 size={13} /> Undo
+          </button>
+          <button
+            onClick={() => store.redo()}
+            disabled={future.length === 0}
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-35 text-gray-200 text-xs rounded-lg transition-colors"
+            title="Redo (Ctrl+Shift+Z / Ctrl+Y)"
+          >
+            <Redo2 size={13} /> Redo
+          </button>
           <label className="flex items-center gap-2 text-xs text-gray-400">
             Zoom
             <input
