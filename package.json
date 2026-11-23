@@ -8,7 +8,7 @@
     "scripts": {
         "dev": "concurrently \"npm run vite\" \"npm run electron\"",
         "vite": "vite",
-        "electron": "wait-on http://localhost:5173 && electron .",
+        "electron": "npm run build:electron && npm run build:preload && wait-on http://localhost:5173 && electron .",
         "build": "npm run build:app && npm run build:electron && npm run build:preload",
         "build:app": "vite build",
         "build:electron": "esbuild electron/main/main.ts --bundle --platform=node --target=node16 --format=cjs --external:electron --external:ffmpeg-static --external:ffprobe-static --outfile=dist/electron/main.cjs",
