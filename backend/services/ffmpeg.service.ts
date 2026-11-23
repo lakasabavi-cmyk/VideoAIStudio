@@ -165,6 +165,19 @@ export class FFmpegService {
     })
   }
 
+  /** Duration of any media file (audio files included). */
+  static async getMediaDuration(mediaPath: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(mediaPath, (err, metadata) => {
+        if (err) {
+          reject(err)
+          return
+        }
+        resolve(metadata.format.duration || 0)
+      })
+    })
+  }
+
   /**
    * Detect silent ranges with ffmpeg's silencedetect filter.
    * Returns ranges in seconds. A silence that runs to the end of the
@@ -549,6 +562,136 @@ export class FFmpegService {
           '-c:a', 'aac', '-b:a', '192k',
         ])
         .output(outputPath)
+        .on('progress', (progress) => {
+          if (progress.timemark && outputDuration > 0) {
+            const parts = progress.timemark.split(':')
+            const seconds =
+              parseInt(parts[0], 10) * 3600 +
+              parseInt(parts[1], 10) * 60 +
+              parseFloat(parts[2])
+            const percent = Math.round((seconds / outputDuration) * 100)
+            if (Number.isFinite(percent)) {
+              onProgress?.(Math.min(100, percent))
+            }
+          }
+        })
+        .on('end', () => {
+          onProgress?.(100)
+          resolve()
+        })
+        .on('error', reject)
+        .run()
+    })
+  }
+
+  /**
+   * Compose a timeline: video clips (each trimmed to [start, end])
+   * are normalized to the first clip and concatenated; the clips'
+   * own audio runs underneath at originalVolume; the added audio
+   * clips are laid end to end starting at audioStartOffset and
+   * mixed over the top. Segment audio is locked to the segment's
+   * video length, the same rule the merge uses.
+   */
+  static async composeTimeline(
+    request: {
+      clips: { path: string; startSeconds: number; endSeconds: number }[]
+      audioClips: { path: string; volume: number }[]
+      audioStartOffset: number
+      originalVolume: number
+      outputPath: string
+    },
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    if (request.clips.length === 0) {
+      throw new Error('The timeline has no video clips')
+    }
+    const metas: VideoMetadata[] = []
+    for (const clip of request.clips) {
+      metas.push(await FFmpegService.getVideoMetadata(clip.path))
+    }
+    const target = metas[0]
+    const targetFps = target.fps > 0 ? Math.round(target.fps) : 30
+    const originalVolume = Math.max(0, Math.min(1, request.originalVolume))
+
+    const filters: string[] = []
+    const concatInputs: string[] = []
+    let outputDuration = 0
+    request.clips.forEach((clip, i) => {
+      const meta = metas[i]
+      const start = Math.max(0, Math.min(clip.startSeconds, meta.duration))
+      const end = Math.max(
+        start + 0.1,
+        Math.min(clip.endSeconds, meta.duration || clip.endSeconds)
+      )
+      const length = end - start
+      filters.push(
+        `[${i}:v]trim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
+          `setpts=PTS-STARTPTS,scale=${target.width}:${target.height},` +
+          `format=yuv420p,setsar=1[v${i}]`
+      )
+      if (meta.audioCodec) {
+        filters.push(
+          `[${i}:a]atrim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
+            `asetpts=PTS-STARTPTS,aresample=48000,` +
+            `aformat=channel_layouts=stereo,volume=${originalVolume.toFixed(3)},` +
+            `apad,atrim=duration=${length.toFixed(3)}[a${i}]`
+        )
+      } else {
+        filters.push(
+          `anullsrc=channel_layout=stereo:sample_rate=48000,` +
+            `atrim=duration=${length.toFixed(3)}[a${i}]`
+        )
+      }
+      concatInputs.push(`[v${i}][a${i}]`)
+      outputDuration += length
+    })
+    filters.push(
+      `${concatInputs.join('')}concat=n=${request.clips.length}:v=1:a=1[cv][ca]`
+    )
+    filters.push(`[cv]fps=${targetFps}[outv]`)
+
+    // Added-audio bed: clips end to end from the start offset.
+    let audioOut = '[ca]'
+    if (request.audioClips.length > 0) {
+      const bedLabels: string[] = []
+      let cursor = Math.max(0, request.audioStartOffset)
+      for (let k = 0; k < request.audioClips.length; k++) {
+        const audio = request.audioClips[k]
+        const inputIndex = request.clips.length + k
+        const duration = await FFmpegService.getMediaDuration(audio.path)
+        const delayMs = Math.round(cursor * 1000)
+        const volume = Math.max(0, Math.min(1, audio.volume))
+        filters.push(
+          `[${inputIndex}:a]aresample=48000,aformat=channel_layouts=stereo,` +
+            `volume=${volume.toFixed(3)},adelay=${delayMs}[b${k}]`
+        )
+        bedLabels.push(`[b${k}]`)
+        cursor += duration
+      }
+      if (bedLabels.length === 1) {
+        filters.push(`${bedLabels[0]}anull[bed]`)
+      } else {
+        filters.push(
+          `${bedLabels.join('')}amix=inputs=${bedLabels.length}:duration=longest:normalize=0[bed]`
+        )
+      }
+      filters.push(`[ca][bed]amix=inputs=2:duration=first:normalize=0[outa]`)
+      audioOut = '[outa]'
+    }
+
+    return new Promise((resolve, reject) => {
+      const command = FFmpegService.trackCommand(ffmpeg())
+      request.clips.forEach((clip) => command.input(clip.path))
+      request.audioClips.forEach((audio) => command.input(audio.path))
+      command
+        .complexFilter(filters)
+        .map('[outv]')
+        .map(audioOut)
+        .outputOptions([
+          '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+          '-c:a', 'aac', '-b:a', '192k',
+        ])
+        .output(request.outputPath)
         .on('progress', (progress) => {
           if (progress.timemark && outputDuration > 0) {
             const parts = progress.timemark.split(':')

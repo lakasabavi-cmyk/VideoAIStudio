@@ -154,3 +154,15 @@ export interface ProcessResult {
   outputPath?: string
   error?: string
 }
+
+export interface ComposeRequest {
+  /** Video clips in timeline order; each is trimmed to [start, end]. */
+  clips: { path: string; startSeconds: number; endSeconds: number }[]
+  /** Added audio clips, laid end to end starting at audioStartOffset. */
+  audioClips: { path: string; volume: number }[]
+  /** Seconds into the timeline where the added-audio track starts. */
+  audioStartOffset: number
+  /** Volume of the clips' own audio, 0-1 (0 = muted). */
+  originalVolume: number
+  outputPath: string
+}

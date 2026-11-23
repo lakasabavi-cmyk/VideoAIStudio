@@ -137,6 +137,46 @@ ipcMain.handle('dialog:selectVideo', async () => {
   }
 })
 
+// Multi-file picker for the timeline editor (videos or audio).
+ipcMain.handle(
+  'dialog:selectFiles',
+  async (_, kind: 'video' | 'audio') => {
+    if (!mainWindow) {
+      return { success: false, error: 'Main window not found' }
+    }
+    try {
+      const isVideo = kind === 'video'
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: isVideo ? 'Select Video Files' : 'Select Audio Files',
+        filters: [
+          isVideo
+            ? {
+                name: 'Video Files',
+                extensions: ['mp4', 'mov', 'mkv', 'avi', 'webm', 'flv', 'wmv'],
+              }
+            : {
+                name: 'Audio Files',
+                extensions: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg'],
+              },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+        properties: ['openFile', 'multiSelections'],
+      })
+      if (result.canceled) {
+        return { success: false, error: 'User canceled selection' }
+      }
+      const files = result.filePaths.map((filePath) => ({
+        filePath,
+        fileName: path.basename(filePath),
+        fileSize: fs.statSync(filePath).size,
+      }))
+      return { success: true, data: files }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  }
+)
+
 // Create menu
 const template: MenuItemConstructorOptions[] = [
   {

@@ -13,6 +13,7 @@ import type {
   SpeedRequest,
   TransformRequest,
   TimelineThumbsRequest,
+  ComposeRequest,
 } from '@/types/ipc'
 
 export const preload = {
@@ -61,6 +62,15 @@ export const preload = {
     ipcRenderer.invoke('ffmpeg:transform', request),
   timelineThumbnails: (request: TimelineThumbsRequest) =>
     ipcRenderer.invoke('ffmpeg:timelineThumbs', request),
+
+  composeTimeline: (request: ComposeRequest) =>
+    ipcRenderer.invoke('ffmpeg:compose', request),
+
+  selectFiles: (kind: 'video' | 'audio') =>
+    ipcRenderer.invoke('dialog:selectFiles', kind),
+
+  getMediaDuration: (filePath: string) =>
+    ipcRenderer.invoke('media:duration', { filePath }),
 
   getLogTail: () => ipcRenderer.invoke('log:getTail'),
   openLogFile: () => ipcRenderer.invoke('log:openFile'),

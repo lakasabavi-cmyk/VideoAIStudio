@@ -186,6 +186,67 @@ export function enqueueTimeline(video: VideoFile) {
   enqueue(baseJob('timeline', video, undefined))
 }
 
+/**
+ * Export the timeline composition: trimmed video clips in order,
+ * their own audio at originalVolume, and the added-audio clips
+ * mixed over the top. Returns an error message instead of
+ * enqueueing when the timeline is empty.
+ */
+export function enqueueCompose(timeline: {
+  videoClips: {
+    id: string
+    path: string
+    name: string
+    duration: number
+    width: number
+    height: number
+    trimStart: number
+    trimEnd: number
+  }[]
+  audioClips: { path: string; volume: number }[]
+  audioStartOffset: number
+  originalVolume: number
+}): string | null {
+  if (timeline.videoClips.length === 0) {
+    return 'Add at least one video clip to the timeline first.'
+  }
+  const first = timeline.videoClips[0]
+  const pseudo: VideoFile = {
+    id: first.id,
+    path: first.path,
+    name: first.name,
+    duration: first.duration,
+    width: first.width,
+    height: first.height,
+    fps: 0,
+    codec: '',
+    bitrate: '',
+    size: 0,
+    createdAt: new Date(),
+  }
+  const job = baseJob('compose', pseudo, {
+    compose: {
+      clips: timeline.videoClips.map((c) => ({
+        path: c.path,
+        startSeconds: c.trimStart,
+        endSeconds: c.trimEnd,
+      })),
+      audioClips: timeline.audioClips.map((a) => ({
+        path: a.path,
+        volume: a.volume / 100,
+      })),
+      audioStartOffset: timeline.audioStartOffset,
+      originalVolume: timeline.originalVolume / 100,
+    },
+  })
+  job.videoName =
+    timeline.videoClips.length > 1
+      ? `${first.name} + ${timeline.videoClips.length - 1} more (timeline)`
+      : `${first.name} (timeline)`
+  enqueue(job)
+  return null
+}
+
 export function enqueueExport(video: VideoFile) {
   const { exportFormat, exportQuality } = useSettingsStore.getState()
   enqueue(
@@ -306,6 +367,17 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
         columns: 5,
         rows: 2,
       })
+    case 'compose': {
+      const compose = job.params?.compose
+      if (!compose) throw new Error('Missing timeline data')
+      return api.composeTimeline({
+        clips: compose.clips,
+        audioClips: compose.audioClips,
+        audioStartOffset: compose.audioStartOffset,
+        originalVolume: compose.originalVolume,
+        outputPath: withSuffix(job.inputPath, '.timeline'),
+      })
+    }
     case 'export':
       return api.exportVideo({
         videoPath: job.inputPath,

@@ -17,6 +17,7 @@ import type {
   SpeedRequest,
   TransformRequest,
   TimelineThumbsRequest,
+  ComposeRequest,
   ProcessResult,
 } from '@/types/ipc'
 
@@ -263,6 +264,29 @@ export function setupFFmpegWorkers() {
       return done(event, request.outputPath)
     } catch (error) {
       return fail(event, error)
+    }
+  })
+
+  // Compose a timeline (trimmed clips + added-audio track)
+  ipcMain.handle(
+    'ffmpeg:compose',
+    async (event, request: ComposeRequest): Promise<ProcessResult> => {
+      try {
+        await FFmpegService.composeTimeline(request, progressFor(event))
+        return done(event, request.outputPath)
+      } catch (error) {
+        return fail(event, error)
+      }
+    }
+  )
+
+  // Duration probe that also works for audio-only files
+  ipcMain.handle('media:duration', async (_, { filePath }: { filePath: string }) => {
+    try {
+      const duration = await FFmpegService.getMediaDuration(filePath)
+      return { success: true, data: { duration } }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
     }
   })
 

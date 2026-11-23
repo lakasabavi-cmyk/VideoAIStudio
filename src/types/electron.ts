@@ -14,6 +14,7 @@ import type {
   SpeedRequest,
   TransformRequest,
   TimelineThumbsRequest,
+  ComposeRequest,
   ProcessResult,
 } from './ipc'
 
@@ -60,6 +61,17 @@ export interface ElectronAPI {
   changeSpeed: (request: SpeedRequest) => Promise<ProcessResult>
   transformVideo: (request: TransformRequest) => Promise<ProcessResult>
   timelineThumbnails: (request: TimelineThumbsRequest) => Promise<ProcessResult>
+  composeTimeline: (request: ComposeRequest) => Promise<ProcessResult>
+  selectFiles: (kind: 'video' | 'audio') => Promise<{
+    success: boolean
+    data?: { filePath: string; fileName: string; fileSize: number }[]
+    error?: string
+  }>
+  getMediaDuration: (filePath: string) => Promise<{
+    success: boolean
+    data?: { duration: number }
+    error?: string
+  }>
   getLogTail: () => Promise<{ path: string; text: string }>
   openLogFile: () => Promise<{ success: boolean }>
   getSystemStats: () => Promise<SystemStats>

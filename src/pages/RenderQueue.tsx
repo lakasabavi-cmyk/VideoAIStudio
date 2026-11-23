@@ -17,6 +17,7 @@ const KIND_LABELS: Record<RenderJobKind, string> = {
   speed: 'Speed',
   transform: 'Rotate / Flip',
   timeline: 'Timeline Thumbnails',
+  compose: 'Timeline Export',
   export: 'Export',
 }
 

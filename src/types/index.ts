@@ -68,6 +68,7 @@ export type RenderJobKind =
   | 'speed'
   | 'transform'
   | 'timeline'
+  | 'compose'
 
 export interface RenderJobParams {
   threshold?: number
@@ -100,6 +101,13 @@ export interface RenderJobParams {
   crop?: { x: number; y: number; width: number; height: number }
   speed?: { factor: number }
   transform?: 'rot90' | 'rot-90' | 'rot180' | 'flipH' | 'flipV'
+  /** Timeline composition snapshot (see composeTimeline). */
+  compose?: {
+    clips: { path: string; startSeconds: number; endSeconds: number }[]
+    audioClips: { path: string; volume: number }[]
+    audioStartOffset: number
+    originalVolume: number
+  }
   quality?: 'low' | 'medium' | 'high'
 }
 

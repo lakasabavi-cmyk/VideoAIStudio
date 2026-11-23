@@ -182,3 +182,31 @@ for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
 
 - Persisted locally (music file, music volume, original volume,
   quality, output format).
+
+## Timeline Editor (Dashboard, under Current Video)
+
+CapCut-style composition, added 2026-11-23. A video track and an
+added-audio track live in `src/stores/timelineStore.ts` (zustand
+persist, key `videoai-timeline` — a timeline is a project and must
+survive restarts, unlike the render queue). Clips are added via the
++ buttons (multi-select dialog `dialog:selectFiles`), by dropping
+files onto a track, from the imported-videos list, or with the
+"+ Current video" quick button. Video blocks can be dragged to
+reorder and trimmed in place (trim start/end seconds); clicking a
+video clip also makes it the preview/current video. Audio clips
+play end to end starting at "Audio starts at (s)", each with its
+own volume; the clips' own audio has a separate Original volume
+slider.
+
+Export is the editor's own **Export Timeline** button -> job kind
+`compose` -> `FFmpegService.composeTimeline`: every clip is
+normalized to the first clip (size, fps, yuv420p), trimmed with
+`trim/atrim` to its kept range, segment audio locked to the
+segment's video length (same rule as merge), concatenated, then
+the audio bed is mixed over with `amix normalize=0` (bed clips
+positioned with `adelay`, final mix `duration=first` so the bed
+cannot outrun the video). Output: `<first clip>.timeline.mp4`.
+Unlike Merge, the timeline does NOT drop first frames — its clips
+are independent, not last-frame chains. Audio durations come from
+`media:duration` (`getMediaDuration`), because `getVideoMetadata`
+rejects audio-only files.
