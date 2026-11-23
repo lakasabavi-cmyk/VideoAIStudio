@@ -2,7 +2,6 @@ import { FC, useEffect, useRef, useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import {
   Plus,
-  X,
   Film,
   Download,
   Trash2,
@@ -24,6 +23,7 @@ import {
   Undo2,
   Redo2,
   Waves,
+  Ribbon,
 } from 'lucide-react'
 import {
   useTimelineStore,
@@ -268,6 +268,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
   const [drag, setDrag] = useState<DragState | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [tool, setTool] = useState<ToolKind | null>(null)
+  const [transitionMenuOpen, setTransitionMenuOpen] = useState(false)
   const [toolTrim, setToolTrim] = useState({ start: 0, end: 0 })
   const [toolSplitAt, setToolSplitAt] = useState(0)
   const [toolSegLen, setToolSegLen] = useState(5)
@@ -1066,28 +1067,6 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                 </span>
               </div>
               <div className="flex items-center gap-3 flex-wrap">
-                <label className="flex items-center gap-1">
-                  Transition in
-                  <select
-                    value={selectedVideo.transition ?? 'none'}
-                    onChange={(e) =>
-                      store.updateVideoClip(selectedVideo.id, {
-                        transition: e.target.value as ClipTransition,
-                      })
-                    }
-                    className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-100"
-                    title="0.5s transition from the previous clip into this one"
-                  >
-                    <option value="none">None</option>
-                    <option value="fade">Fade</option>
-                    <option value="dissolve">Dissolve</option>
-                    <option value="zoom">Zoom</option>
-                    <option value="slide">Slide</option>
-                  </select>
-                  <span className="text-gray-500">0.5s</span>
-                </label>
-              </div>
-              <div className="flex items-center gap-3 flex-wrap">
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1101,15 +1080,6 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                   />
                   Remove duplicated first frame
                 </label>
-                <button
-                  onClick={() => {
-                    store.removeVideoClip(selectedVideo.id)
-                    setSelectedVideoId(null)
-                  }}
-                  className="flex items-center gap-1 px-2 py-1 bg-gray-800 hover:bg-red-600/30 text-red-300 rounded-lg transition-colors"
-                >
-                  <X size={12} /> Remove clip
-                </button>
               </div>
             </div>
           ) : selectedAudio ? (
@@ -1193,15 +1163,6 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                     className="w-28 accent-emerald-500"
                   />
                 </label>
-                <button
-                  onClick={() => {
-                    store.removeAudioClip(selectedAudio.id)
-                    setSelectedAudioId(null)
-                  }}
-                  className="flex items-center gap-1 px-2 py-1 bg-gray-800 hover:bg-red-600/30 text-red-300 rounded-lg transition-colors"
-                >
-                  <X size={12} /> Remove audio
-                </button>
               </div>
             </div>
           ) : (
@@ -1252,6 +1213,89 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
               {label}
             </button>
           ))}
+          <div className="w-px h-6 bg-gray-700 mx-1" />
+          <div className="relative">
+            <button
+              disabled={!selectedVideo}
+              onClick={() => setTransitionMenuOpen((open) => !open)}
+              className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg text-[10px] transition-colors disabled:opacity-35 ${
+                selectedVideo?.transition && selectedVideo.transition !== 'none'
+                  ? 'bg-fuchsia-600/25 text-fuchsia-200'
+                  : 'text-gray-300 hover:bg-gray-800'
+              }`}
+              title={
+                selectedVideo
+                  ? 'Transition into this clip (0.5s, rendered by Build Movie)'
+                  : 'Select a video clip first'
+              }
+            >
+              <Ribbon size={16} />
+              {selectedVideo?.transition && selectedVideo.transition !== 'none'
+                ? selectedVideo.transition[0].toUpperCase() +
+                  selectedVideo.transition.slice(1)
+                : 'Transition'}
+            </button>
+            {transitionMenuOpen && selectedVideo && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setTransitionMenuOpen(false)}
+                />
+                <div className="absolute left-0 top-full mt-1 z-30 w-36 bg-gray-900 border border-gray-700 rounded-lg shadow-xl py-1">
+                  {(
+                    [
+                      ['none', 'None'],
+                      ['fade', 'Fade'],
+                      ['dissolve', 'Dissolve'],
+                      ['zoom', 'Zoom'],
+                      ['slide', 'Slide'],
+                    ] as [ClipTransition, string][]
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      onClick={() => {
+                        store.updateVideoClip(selectedVideo.id, {
+                          transition: value,
+                        })
+                        setTransitionMenuOpen(false)
+                      }}
+                      className={`block w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                        (selectedVideo.transition ?? 'none') === value
+                          ? 'bg-fuchsia-600/25 text-fuchsia-100'
+                          : 'text-gray-300 hover:bg-gray-800'
+                      }`}
+                    >
+                      {label}
+                      <span className="text-gray-500"> · 0.5s</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+          <button
+            disabled={!selectedVideo && !selectedAudio}
+            onClick={() => {
+              if (selectedVideo) {
+                store.removeVideoClip(selectedVideo.id)
+                setSelectedVideoId(null)
+              } else if (selectedAudio) {
+                store.removeAudioClip(selectedAudio.id)
+                setSelectedAudioId(null)
+              }
+            }}
+            className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg text-[10px] text-red-300 hover:bg-red-600/20 transition-colors disabled:opacity-35"
+            title={
+              selectedVideo
+                ? `Delete the clip ${selectedVideo.name} from the timeline`
+                : selectedAudio
+                  ? `Delete the audio ${selectedAudio.name} from the timeline`
+                  : 'Select a clip or audio first'
+            }
+          >
+            <Trash2 size={16} />
+            Delete
+          </button>
           <span className="text-[11px] text-gray-500 ml-2 truncate">
             {selectedVideo
               ? `Tools apply to: ${selectedVideo.name}`

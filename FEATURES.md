@@ -331,3 +331,15 @@ from `media:duration` (`getMediaDuration`), because
 - Version: package.json is the single source of truth
   (0.2.0); vite injects it as `__APP_VERSION__` and the
   sidebar + dashboard read it from there.
+
+## Edit-bar controls (v0.2.1)
+
+- The timeline's icon edit bar now hosts the clip actions
+  that used to live in the Clip Inspector: a **Delete**
+  button (trash icon) removes the selected video clip or
+  audio clip, and a **Transition** button (ribbon/bow icon,
+  highlighted fuchsia when a transition is set, labelled
+  with its name) opens a small menu — None / Fade /
+  Dissolve / Zoom / Slide, 0.5s each. The Remove clip /
+  Remove audio buttons and the Transition-in select were
+  removed from the Inspector so there is one home for them.
