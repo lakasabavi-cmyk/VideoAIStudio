@@ -20,7 +20,12 @@ export interface TimelineVideoClip {
   dropFirstFrame: boolean
   /** Source frame rate, when known (frame-accurate splitting). */
   fps?: number
+  /** Transition into this clip from the previous one (0.5s). */
+  transition?: ClipTransition
 }
+
+/** Simple 0.5s transitions between timeline clips. */
+export type ClipTransition = 'none' | 'fade' | 'dissolve' | 'zoom' | 'slide'
 
 export interface TimelineAudioClip {
   id: string
@@ -86,6 +91,13 @@ interface TimelineState {
   beginBatch: () => void
   endBatch: () => void
   resetHistory: () => void
+  /** Auto Audio Ducking: music dips while voice is present. */
+  ducking: boolean
+  setDucking: (on: boolean) => void
+  /** Project name — Build Movie renders into a folder with
+   * this name, one folder per project. */
+  projectName: string
+  setProjectName: (name: string) => void
   setLaneOffset: (kind: AudioKind, seconds: number) => void
   setLaneVolume: (kind: AudioKind, percent: number) => void
   setLaneFade: (kind: AudioKind, which: 'fadeIn' | 'fadeOut', seconds: number) => void
@@ -223,6 +235,7 @@ export interface TimelineSnapshot {
   videoFadeOut: number
   originalVolume: number
   ripple: boolean
+  ducking: boolean
 }
 
 export function snapshotOf(state: TimelineSnapshot): TimelineSnapshot {
@@ -236,6 +249,7 @@ export function snapshotOf(state: TimelineSnapshot): TimelineSnapshot {
     videoFadeOut: state.videoFadeOut ?? 0,
     originalVolume: state.originalVolume,
     ripple: state.ripple,
+    ducking: state.ducking ?? false,
   }
 }
 
@@ -267,6 +281,10 @@ export const useTimelineStore = create<TimelineState>()(
       laneVolumes: defaultLaneVolumes(),
       laneFades: defaultLaneFades(),
       ripple: true,
+      ducking: false,
+      projectName: '',
+      setDucking: (on) => set({ ducking: on }),
+      setProjectName: (name) => set({ projectName: name }),
       past: [],
       future: [],
       undo: () => {
@@ -483,6 +501,8 @@ export const useTimelineStore = create<TimelineState>()(
         laneVolumes,
         laneFades,
         ripple,
+        ducking,
+        projectName,
       }) => ({
         videoClips,
         audioClips,
@@ -493,6 +513,8 @@ export const useTimelineStore = create<TimelineState>()(
         laneVolumes,
         laneFades,
         ripple,
+        ducking,
+        projectName,
       }),
     }
   )

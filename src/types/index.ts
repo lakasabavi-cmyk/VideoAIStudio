@@ -109,6 +109,7 @@ export interface RenderJobParams {
       endSeconds: number
       offsetSeconds: number
       dropFirstFrame?: boolean
+      transition?: string
     }[]
     audioClips: {
       path: string
@@ -123,6 +124,9 @@ export interface RenderJobParams {
       { fadeInSeconds: number; fadeOutSeconds: number }
     >
     originalVolume: number
+    ducking?: boolean
+    /** Build Movie renders into a new folder with this name. */
+    projectName?: string
     originalFadeInSeconds?: number
     originalFadeOutSeconds?: number
   }

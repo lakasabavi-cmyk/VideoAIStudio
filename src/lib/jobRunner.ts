@@ -3,7 +3,13 @@ import { useRenderQueue } from '@/stores/renderQueue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { ProcessResult } from '@/types/ipc'
 import type { RenderJob, RenderJobKind, VideoFile } from '@/types'
-import { withSuffix, lastFramePath, partsDirPath } from './files'
+import {
+  withSuffix,
+  lastFramePath,
+  partsDirPath,
+  sanitizeFolderName,
+  projectOutputPath,
+} from './files'
 
 /**
  * Sequential render-queue runner.
@@ -209,6 +215,7 @@ export function enqueueCompose(timeline: {
     trimEnd: number
     offset: number
     dropFirstFrame: boolean
+    transition?: string
   }[]
   audioClips: {
     path: string
@@ -226,10 +233,16 @@ export function enqueueCompose(timeline: {
   >
   videoFadeIn?: number
   videoFadeOut?: number
+  ducking?: boolean
+  projectName?: string
   originalVolume: number
 }): string | null {
   if (timeline.videoClips.length === 0) {
     return 'Add at least one video clip to the timeline first.'
+  }
+  const projectName = sanitizeFolderName(timeline.projectName ?? '')
+  if (!projectName) {
+    return 'Enter a project name first — every build renders into its own project folder next to the first clip.'
   }
   const first = timeline.videoClips[0]
   const pseudo: VideoFile = {
@@ -283,9 +296,12 @@ export function enqueueCompose(timeline: {
         endSeconds: c.trimEnd,
         offsetSeconds: c.offset,
         dropFirstFrame: c.dropFirstFrame,
+        transition: c.transition,
       })),
       audioClips,
       audioLaneFades,
+      ducking: timeline.ducking ?? false,
+      projectName,
       originalVolume: timeline.originalVolume / 100,
       originalFadeInSeconds: timeline.videoFadeIn ?? 0,
       originalFadeOutSeconds: timeline.videoFadeOut ?? 0,
@@ -425,8 +441,14 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
       return api.composeTimeline({
         clips: compose.clips,
         audioClips: compose.audioClips,
+        audioLaneFades: compose.audioLaneFades,
         originalVolume: compose.originalVolume,
-        outputPath: withSuffix(job.inputPath, '.timeline'),
+        originalFadeInSeconds: compose.originalFadeInSeconds,
+        originalFadeOutSeconds: compose.originalFadeOutSeconds,
+        ducking: compose.ducking,
+        outputPath: compose.projectName
+          ? projectOutputPath(job.inputPath, compose.projectName, '.timeline')
+          : withSuffix(job.inputPath, '.timeline'),
       })
     }
     case 'export':

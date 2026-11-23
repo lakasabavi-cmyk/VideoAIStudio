@@ -602,6 +602,7 @@ export class FFmpegService {
         endSeconds: number
         offsetSeconds: number
         dropFirstFrame?: boolean
+        transition?: string
       }[]
       audioClips: {
         path: string
@@ -618,6 +619,7 @@ export class FFmpegService {
       originalVolume: number
       originalFadeInSeconds?: number
       originalFadeOutSeconds?: number
+      ducking?: boolean
       outputPath: string
     },
     onProgress?: (progress: number) => void
@@ -625,6 +627,8 @@ export class FFmpegService {
     if (request.clips.length === 0) {
       throw new Error('The timeline has no video clips')
     }
+    // The output may live in a fresh project folder — create it.
+    fs.mkdirSync(path.dirname(request.outputPath), { recursive: true })
     const metas: VideoMetadata[] = []
     for (const clip of request.clips) {
       metas.push(await FFmpegService.getVideoMetadata(clip.path))
@@ -640,6 +644,7 @@ export class FFmpegService {
       clipIndex?: number
       start?: number
       end?: number
+      transition?: string
     }
     const ordered = request.clips
       .map((clip, index) => ({ clip, index }))
@@ -659,19 +664,23 @@ export class FFmpegService {
       )
       const gap = clip.offsetSeconds - cursor
       if (gap > 0.05) segments.push({ kind: 'gap', length: gap })
-      segments.push({ kind: 'clip', length: end - start, clipIndex: index, start, end })
+      segments.push({
+        kind: 'clip',
+        length: end - start,
+        clipIndex: index,
+        start,
+        end,
+        transition: clip.transition,
+      })
       cursor = Math.max(cursor, clip.offsetSeconds) + (end - start)
     }
-    const outputDuration = cursor
-
     const filters: string[] = []
-    const concatInputs: string[] = []
     segments.forEach((segment, s) => {
       if (segment.kind === 'gap') {
         filters.push(
           `color=c=black:s=${target.width}x${target.height}:r=${targetFps},` +
             `trim=duration=${segment.length.toFixed(3)},setpts=PTS-STARTPTS,` +
-            `format=yuv420p[gv${s}]`
+            `format=yuv420p,settb=AVTB[gv${s}]`
         )
         filters.push(
           `anullsrc=channel_layout=stereo:sample_rate=48000,` +
@@ -685,7 +694,7 @@ export class FFmpegService {
         filters.push(
           `[${i}:v]trim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
             `setpts=PTS-STARTPTS,scale=${target.width}:${target.height},` +
-            `format=yuv420p,setsar=1[gv${s}]`
+            `fps=${targetFps},format=yuv420p,setsar=1,settb=AVTB[gv${s}]`
         )
         if (meta.audioCodec) {
           filters.push(
@@ -701,16 +710,56 @@ export class FFmpegService {
           )
         }
       }
-      concatInputs.push(`[gv${s}][ga${s}]`)
     })
-    filters.push(
-      `${concatInputs.join('')}concat=n=${segments.length}:v=1:a=1[cv][ca]`
-    )
-    filters.push(`[cv]fps=${targetFps}[outv]`)
+
+    // Join the segments pairwise: a clip that carries a
+    // transition joins the running result with an xfade +
+    // acrossfade (0.5s — the two clips overlap by that much);
+    // everything else is a plain concat (hard cut, gaps too).
+    const XFADE_BY_NAME: Record<string, string> = {
+      fade: 'fade',
+      dissolve: 'dissolve',
+      zoom: 'zoomin',
+      slide: 'slideleft',
+    }
+    const TRANSITION_SECONDS = 0.5
+    let joinedV = '[gv0]'
+    let joinedA = '[ga0]'
+    let joinedLength = segments[0].length
+    for (let s = 1; s < segments.length; s++) {
+      const segment = segments[s]
+      const xfade =
+        segment.kind === 'clip'
+          ? XFADE_BY_NAME[segment.transition ?? '']
+          : undefined
+      const canTransition =
+        xfade !== undefined &&
+        joinedLength > TRANSITION_SECONDS + 0.05 &&
+        segment.length > TRANSITION_SECONDS + 0.05
+      if (canTransition) {
+        const offset = joinedLength - TRANSITION_SECONDS
+        filters.push(
+          `${joinedV}[gv${s}]xfade=transition=${xfade}:duration=${TRANSITION_SECONDS}:offset=${offset.toFixed(3)}[jv${s}]`
+        )
+        filters.push(
+          `${joinedA}[ga${s}]acrossfade=d=${TRANSITION_SECONDS}:c1=tri:c2=tri[ja${s}]`
+        )
+        joinedLength += segment.length - TRANSITION_SECONDS
+      } else {
+        filters.push(
+          `${joinedV}${joinedA}[gv${s}][ga${s}]concat=n=2:v=1:a=1[jv${s}][ja${s}]`
+        )
+        joinedLength += segment.length
+      }
+      joinedV = `[jv${s}]`
+      joinedA = `[ja${s}]`
+    }
+    const outputDuration = joinedLength
+    filters.push(`${joinedV}fps=${targetFps},format=yuv420p[outv]`)
 
     // Video-track audio fades, applied to the concatenated clip
     // audio before any bed is mixed over it.
-    let mainAudio = '[ca]'
+    let mainAudio = joinedA
     const vIn = Math.min(request.originalFadeInSeconds ?? 0, outputDuration / 2)
     const vOut = Math.min(request.originalFadeOutSeconds ?? 0, outputDuration / 2)
     const mainFades: string[] = []
@@ -721,7 +770,7 @@ export class FFmpegService {
       )
     }
     if (mainFades.length > 0) {
-      filters.push(`[ca]${mainFades.join(',')}[caf]`)
+      filters.push(`${joinedA}${mainFades.join(',')}[caf]`)
       mainAudio = '[caf]'
     }
 
@@ -737,6 +786,7 @@ export class FFmpegService {
         lanes.get(lane)!.push(k)
       })
       const laneLabels: string[] = []
+      const laneFinalLabels = new Map<string, string>()
       let laneNo = 0
       for (const [lane, indexes] of lanes) {
         const labels: string[] = []
@@ -781,13 +831,42 @@ export class FFmpegService {
         if (fparts.length > 0) {
           filters.push(`[lane${laneNo}raw]${fparts.join(',')}[lane${laneNo}]`)
           laneLabels.push(`[lane${laneNo}]`)
+          laneFinalLabels.set(lane, `[lane${laneNo}]`)
         } else {
           laneLabels.push(`[lane${laneNo}raw]`)
+          laneFinalLabels.set(lane, `[lane${laneNo}raw]`)
         }
         laneNo++
       }
+      // Auto Audio Ducking: the music lane is sidechain-
+      // compressed by the voice — the Voice lane plus the video
+      // clips' own audio — dipping about 12 dB while anyone
+      // speaks and swelling back up when they stop.
+      let mixMain = mainAudio
+      const mixLanes = [...laneLabels]
+      const musicLabel = laneFinalLabels.get('music')
+      if (request.ducking && musicLabel) {
+        const voiceLabel = laneFinalLabels.get('voice')
+        filters.push(`${mainAudio}asplit=2[duckMain][duckKeyMain]`)
+        mixMain = '[duckMain]'
+        let keyLabel = '[duckKeyMain]'
+        if (voiceLabel) {
+          filters.push(`${voiceLabel}asplit=2[duckVoice][duckKeyVoice]`)
+          filters.push(
+            `[duckKeyMain][duckKeyVoice]amix=inputs=2:duration=longest:normalize=0[duckKey]`
+          )
+          keyLabel = '[duckKey]'
+          const vi = mixLanes.indexOf(voiceLabel)
+          if (vi >= 0) mixLanes[vi] = '[duckVoice]'
+        }
+        filters.push(
+          `${musicLabel}${keyLabel}sidechaincompress=threshold=0.03:ratio=6:attack=25:release=450:makeup=1:detection=rms[ducked]`
+        )
+        const mi = mixLanes.indexOf(musicLabel)
+        if (mi >= 0) mixLanes[mi] = '[ducked]'
+      }
       filters.push(
-        `${mainAudio}${laneLabels.join('')}amix=inputs=${laneLabels.length + 1}:duration=first:normalize=0[outa]`
+        `${mixMain}${mixLanes.join('')}amix=inputs=${mixLanes.length + 1}:duration=first:normalize=0[outa]`
       )
       audioOut = '[outa]'
     }
@@ -860,14 +939,25 @@ export class FFmpegService {
     try {
       if (fs.existsSync(cacheFile)) {
         const parsed = JSON.parse(fs.readFileSync(cacheFile, 'utf8'))
-        if (Array.isArray(parsed) && parsed.length === count) {
+        if (
+          Array.isArray(parsed) &&
+          parsed.length === count &&
+          parsed.some((p) => typeof p === 'number' && p > 0)
+        ) {
           return parsed as number[]
         }
+        // An all-zero cache entry means an earlier decode failed
+        // and poisoned the cache — fall through and decode again.
       }
     } catch {
       // unreadable cache: regenerate below
     }
-    const buf = await new Promise<Buffer>((resolve) => {
+    const decoded = await new Promise<{
+      buf: Buffer
+      code: number | null
+      stderr: string
+      spawnError?: string
+    }>((resolve) => {
       const child = spawn(resolveBinaryPath(ffmpegStatic), [
         '-v', 'error',
         '-ss', startSeconds.toFixed(3),
@@ -877,11 +967,36 @@ export class FFmpegService {
         '-f', 'f32le', '-',
       ])
       const chunks: Buffer[] = []
+      let stderr = ''
       child.stdout.on('data', (c: Buffer) => chunks.push(c))
-      child.on('error', () => resolve(Buffer.alloc(0)))
-      child.on('close', () => resolve(Buffer.concat(chunks)))
+      child.stderr.on('data', (c: Buffer) => {
+        stderr = (stderr + c.toString()).slice(-300)
+      })
+      child.on('error', (err) =>
+        resolve({
+          buf: Buffer.alloc(0),
+          code: null,
+          stderr,
+          spawnError: err.message,
+        })
+      )
+      child.on('close', (code) =>
+        resolve({ buf: Buffer.concat(chunks), code, stderr })
+      )
     })
+    const buf = decoded.buf
     const samples = Math.floor(buf.length / 4)
+    if (samples === 0) {
+      // Decode failed (missing binary, unreadable file, …). Log
+      // the real reason and return flat peaks WITHOUT caching,
+      // so the next open retries instead of staying flat forever.
+      LogService.log(
+        'waveform',
+        `no samples decoded for ${mediaPath} [${startSeconds.toFixed(1)}-${endSeconds.toFixed(1)}s] ` +
+          `code=${decoded.code} ${decoded.spawnError ?? ''} ${decoded.stderr.trim()}`
+      )
+      return new Array<number>(count).fill(0)
+    }
     const peaks = new Array<number>(count).fill(0)
     if (samples > 0) {
       const view = new Float32Array(buf.buffer, buf.byteOffset, samples)

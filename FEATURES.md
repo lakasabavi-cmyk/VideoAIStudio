@@ -199,7 +199,11 @@ Editor surface:
   (`FFmpegService.extractThumbnails`, cached under
   userData/thumb-cache) and real waveform peaks inside the audio
   blocks (`extractWaveformPeaks`, mono 4 kHz PCM peaks cached
-  under userData/wave-cache).
+  under userData/wave-cache). Bars are normalized to the clip's
+  own loudest peak when drawn (raw amplitudes of real
+  recordings are nearly invisible); a decode that produces no
+  samples is logged in the App Log and never cached, and an
+  all-zero cache entry is ignored and re-decoded.
 - Ruler + red playhead; the editor has its own preview player —
   playback walks the clips, switching sources at clip boundaries,
   and the ruler seeks. Zoom goes to 600 px/s (frame level).
@@ -228,6 +232,24 @@ Editor surface:
   fade-in/out; each audio lane has its own volume and fade-in/out
   on top of per-clip volume. Fades are applied per track in the
   compose graph (lanes are submixed, then faded, then mixed).
+- Transitions: each video clip can carry a 0.5s transition
+  into it (Inspector -> Transition in: Fade, Dissolve, Zoom,
+  Slide; a fuchsia badge shows it on the block). In compose,
+  the joint is rendered with xfade + acrossfade so the two
+  clips overlap by 0.5s and the movie gets 0.5s shorter per
+  transition; joints without a transition (and gaps) stay hard
+  cuts. Clips of 0.55s or shorter cannot take a transition.
+- Auto Audio Ducking (toolbar toggle): the Music lane is
+  sidechain-compressed by the voice — the Voice lane mixed
+  with the video clips' own audio — dipping about 12 dB while
+  anyone speaks and swelling back when they stop (threshold
+  0.03, ratio 6, attack 25 ms, release 450 ms; measured
+  -12.4 dB on a -15 dB RMS test voice).
+- Project folders: Build Movie requires a project name
+  (toolbar field); the movie renders into a new folder with
+  that name next to the first clip —
+  <first clip folder>/<Project>/<clip>.timeline.mp4 — one
+  folder per project instead of every render in one place.
 - Undo / Redo: every timeline edit is recorded as a snapshot
   step (up to 60) — toolbar buttons plus Ctrl+Z / Ctrl+Shift+Z /
   Ctrl+Y (text fields keep their native undo). A pointer drag

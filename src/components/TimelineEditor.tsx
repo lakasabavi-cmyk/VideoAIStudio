@@ -23,6 +23,7 @@ import {
   FastForward,
   Undo2,
   Redo2,
+  Waves,
 } from 'lucide-react'
 import {
   useTimelineStore,
@@ -34,6 +35,7 @@ import {
   normalizeTimeline,
   type TimelineVideoClip,
   type TimelineAudioClip,
+  type ClipTransition,
   type AudioKind,
 } from '@/stores/timelineStore'
 import { useVideoStore } from '@/stores/videoStore'
@@ -157,7 +159,31 @@ const Waveform: FC<{ clip: TimelineAudioClip; color: string }> = ({
   const key = `${clip.path}|${clip.trimStart.toFixed(1)}|${clip.trimEnd.toFixed(1)}|${buckets}`
   useEffect(() => {
     let alive = true
-    const timer = setTimeout(async () => {
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+    const draw = (peaks: number[]) => {
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const w = canvas.clientWidth
+      const h = canvas.clientHeight
+      if (w === 0 || h === 0) return
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      ctx.clearRect(0, 0, w, h)
+      ctx.fillStyle = color
+      // Normalize to the clip's own loudest peak and lift the
+      // quiet parts (power curve): real recordings rarely peak
+      // near 1.0, and raw amplitudes draw as a flat line.
+      const max = Math.max(...peaks)
+      const barW = w / peaks.length
+      peaks.forEach((p, i) => {
+        const norm = max > 0.001 ? Math.pow(p / max, 0.6) : 0
+        const bh = Math.max(1, norm * (h - 4))
+        ctx.fillRect(i * barW, (h - bh) / 2, Math.max(1, barW - 0.5), bh)
+      })
+    }
+    const fetchPeaks = async (isRetry: boolean) => {
       try {
         const result = await window.electronAPI.extractWaveformPeaks({
           path: clip.path,
@@ -165,36 +191,25 @@ const Waveform: FC<{ clip: TimelineAudioClip; color: string }> = ({
           endSeconds: clip.trimEnd,
           buckets,
         })
-        if (!alive || !result.success || !result.data) return
-        const canvas = canvasRef.current
-        if (!canvas) return
-        const w = canvas.clientWidth
-        const h = canvas.clientHeight
-        if (w === 0 || h === 0) return
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return
-        ctx.clearRect(0, 0, w, h)
-        ctx.fillStyle = color
-        const peaks = result.data
-        const barW = w / peaks.length
-        peaks.forEach((p, i) => {
-          const bh = Math.max(1, p * (h - 6))
-          ctx.fillRect(
-            i * barW,
-            (h - bh) / 2,
-            Math.max(1, barW - 0.5),
-            bh
-          )
-        })
+        if (!alive) return
+        if (result.success && result.data) {
+          draw(result.data)
+        } else if (!isRetry) {
+          // One quiet retry — a transient decode failure should
+          // not leave the block flat for the whole session.
+          retryTimer = setTimeout(() => void fetchPeaks(true), 1500)
+        }
       } catch {
-        /* waveform is decorative; the editor works without it */
+        if (alive && !isRetry) {
+          retryTimer = setTimeout(() => void fetchPeaks(true), 1500)
+        }
       }
-    }, 300)
+    }
+    const timer = setTimeout(() => void fetchPeaks(false), 300)
     return () => {
       alive = false
       clearTimeout(timer)
+      if (retryTimer) clearTimeout(retryTimer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
@@ -239,6 +254,8 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
     ripple,
     past,
     future,
+    ducking,
+    projectName,
   } = store
   const { videos, currentVideo, setCurrentVideo } = useVideoStore()
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null)
@@ -596,11 +613,13 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
       laneFades,
       videoFadeIn,
       videoFadeOut,
+      ducking,
+      projectName,
       originalVolume,
     })
     onMessage(
       error ??
-        `Build Movie queued (${videoClips.length} video clip(s), ${audioClips.length} audio clip(s), ${fmtT(total)}) — see Render Queue.`
+        `Build Movie queued into project folder "${projectName.trim()}" (${videoClips.length} video clip(s), ${audioClips.length} audio clip(s), ${fmtT(total)}) — see Render Queue.`
     )
   }
 
@@ -893,6 +912,17 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
           >
             <Link2 size={13} /> Smart Concat
           </button>
+          <button
+            onClick={() => store.setDucking(!ducking)}
+            className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-lg transition-colors ${
+              ducking
+                ? 'bg-emerald-600 text-white'
+                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+            }`}
+            title="Auto Audio Ducking: the Music lane dips about 12 dB whenever voice is present (Voice lane or the clips' own audio) and swells back up when the voice stops"
+          >
+            <Waves size={13} /> Auto Ducking {ducking ? 'On' : 'Off'}
+          </button>
           {(videoClips.length > 0 || audioClips.length > 0) && (
             <button
               onClick={() => {
@@ -905,6 +935,23 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
               <Trash2 size={13} /> Clear
             </button>
           )}
+          <label
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${
+              projectName.trim()
+                ? 'bg-gray-800 border-gray-700'
+                : 'bg-gray-800/60 border-amber-600/60'
+            }`}
+            title="Project name — Build Movie renders into a new folder with this name, next to the first clip. One folder per project."
+          >
+            <FolderOpen size={13} className="text-gray-400 shrink-0" />
+            <input
+              type="text"
+              value={projectName}
+              onChange={(e) => store.setProjectName(e.target.value)}
+              placeholder="Project name (required)"
+              className="bg-transparent outline-none text-xs text-gray-100 placeholder:text-gray-500 w-40"
+            />
+          </label>
           <button
             onClick={handleBuild}
             disabled={videoClips.length === 0}
@@ -1017,6 +1064,28 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                 <span className="text-gray-500">
                   keeps {fmtT(keptVideo(selectedVideo))}
                 </span>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <label className="flex items-center gap-1">
+                  Transition in
+                  <select
+                    value={selectedVideo.transition ?? 'none'}
+                    onChange={(e) =>
+                      store.updateVideoClip(selectedVideo.id, {
+                        transition: e.target.value as ClipTransition,
+                      })
+                    }
+                    className="bg-gray-800 border border-gray-600 rounded px-2 py-1 text-gray-100"
+                    title="0.5s transition from the previous clip into this one"
+                  >
+                    <option value="none">None</option>
+                    <option value="fade">Fade</option>
+                    <option value="dissolve">Dissolve</option>
+                    <option value="zoom">Zoom</option>
+                    <option value="slide">Slide</option>
+                  </select>
+                  <span className="text-gray-500">0.5s</span>
+                </label>
               </div>
               <div className="flex items-center gap-3 flex-wrap">
                 <label className="flex items-center gap-1.5 cursor-pointer">
@@ -1541,6 +1610,11 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                     {clip.dropFirstFrame && (
                       <span className="text-[9px] bg-indigo-600 text-white rounded px-1 shrink-0">−1f</span>
                     )}
+                    {clip.transition && clip.transition !== 'none' && (
+                      <span className="text-[9px] bg-fuchsia-600 text-white rounded px-1 shrink-0">
+                        {clip.transition}
+                      </span>
+                    )}
                   </div>
                   <div
                     data-zone="trim-left"
@@ -1683,8 +1757,8 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
         Clips are normalized to the first video clip's size and frame
         rate. With Ripple off, trims and deletions leave black gaps.
         Right-click any clip for frame extraction, upscale, RIFE and
-        its folder. The movie lands next to the first clip as
-        “.timeline.mp4”.
+        its folder. Build Movie renders into the project folder
+        (named above) next to the first clip.
       </p>
 
       {/* Right-click context menu */}

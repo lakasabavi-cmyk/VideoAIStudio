@@ -4,6 +4,39 @@
  */
 
 /** "C:\v\clip.mp4" + ".nosil" -> "C:\v\clip.nosil.mp4" */
+/**
+ * Make a user-typed project name safe as a single folder name
+ * (Windows + POSIX): strip path separators and illegal chars.
+ */
+export function sanitizeFolderName(name: string): string {
+  return name
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/[. ]+$/g, '')
+    .trim()
+}
+
+/**
+ * Output path inside a project folder sitting next to the
+ * source file: <dir>/<project>/<file><suffix>.mp4 — one folder
+ * per project so renders do not pile up in a single directory.
+ */
+export function projectOutputPath(
+  filePath: string,
+  projectName: string,
+  suffix: string
+): string {
+  const sep = filePath.includes('\\') ? '\\' : '/'
+  const parts = filePath.split(sep)
+  const file = parts.pop() ?? filePath
+  const dot = file.lastIndexOf('.')
+  const stamped =
+    dot > 0
+      ? `${file.slice(0, dot)}${suffix}${file.slice(dot)}`
+      : `${file}${suffix}.mp4`
+  return [...parts, projectName, stamped].join(sep)
+}
+
 export function withSuffix(filePath: string, suffix: string): string {
   const sep = filePath.includes('\\') ? '\\' : '/'
   const parts = filePath.split(sep)

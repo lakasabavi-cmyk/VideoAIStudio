@@ -163,6 +163,8 @@ export interface ComposeRequest {
     endSeconds: number
     offsetSeconds: number
     dropFirstFrame?: boolean
+    /** Transition into this clip: fade | dissolve | zoom | slide. */
+    transition?: string
   }[]
   /** Added audio clips at absolute start times, pre-trimmed. */
   audioClips: {
@@ -178,6 +180,8 @@ export interface ComposeRequest {
     string,
     { fadeInSeconds: number; fadeOutSeconds: number }
   >
+  /** Auto Audio Ducking: dip the music lane while voice plays. */
+  ducking?: boolean
   /** Volume of the clips' own audio, 0-1 (0 = muted). */
   originalVolume: number
   /** Video-track audio fades in seconds. */
