@@ -86,6 +86,9 @@ export const preload = {
   openFolder: (filePath: string) =>
     ipcRenderer.invoke('shell:openFolder', filePath),
 
+  deleteFile: (filePath: string) =>
+    ipcRenderer.invoke('file:deleteFile', filePath),
+
   getLogTail: () => ipcRenderer.invoke('log:getTail'),
   openLogFile: () => ipcRenderer.invoke('log:openFile'),
 

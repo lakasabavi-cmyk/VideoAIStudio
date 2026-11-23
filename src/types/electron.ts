@@ -84,6 +84,10 @@ export interface ElectronAPI {
     success: boolean
     error?: string
   }>
+  deleteFile: (filePath: string) => Promise<{
+    success: boolean
+    error?: string
+  }>
   selectFiles: (kind: 'video' | 'audio') => Promise<{
     success: boolean
     data?: { filePath: string; fileName: string; fileSize: number }[]

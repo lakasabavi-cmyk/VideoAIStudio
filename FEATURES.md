@@ -275,3 +275,26 @@ with adelay + amix normalize=0, final mix `duration=first`.
 Output: `<first clip>.timeline.mp4`. Audio durations/trims come
 from `media:duration` (`getMediaDuration`), because
 `getVideoMetadata` rejects audio-only files.
+
+## Delete files + GPU safe mode
+
+- Delete a file for real: the trash button on a Your Videos
+  row is a two-step confirm — first click arms it ("Delete
+  file?"), second click sends the file to the Windows
+  Recycle Bin (`file:deleteFile` -> `shell.trashItem`, so a
+  mistake is recoverable) and removes every reference: the
+  library entry, the current video if it was this one, and
+  any timeline video/audio clips pointing at that path. In
+  the Render Queue, finished jobs with an output path get a
+  second button (FileX2) with the same two-step confirm that
+  deletes the OUTPUT file (trimmed / split / rendered
+  leftovers) and drops the entry; the plain trash there
+  still removes only the entry.
+- GPU safe mode: the main process counts Chromium GPU
+  process crashes (`child-process-gone`, logged under the
+  `gpu` scope in the App Log). After two crashes in one run
+  it arms `gpu-safemode.json` in userData; the next launch
+  then disables hardware acceleration and renders in
+  software. The heavy GPU work runs in external tools, so
+  the UI loses almost nothing. Delete that file to
+  re-enable hardware acceleration.

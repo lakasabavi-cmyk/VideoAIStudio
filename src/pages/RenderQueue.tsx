@@ -1,5 +1,5 @@
 import { FC, useEffect, useState } from 'react'
-import { Trash2, CheckCircle, AlertCircle, Loader, Ban } from 'lucide-react'
+import { Trash2, CheckCircle, AlertCircle, Loader, Ban, FileX2 } from 'lucide-react'
 import { useRenderQueue } from '@/stores/renderQueue'
 import { cancelCurrentJob } from '@/lib/jobRunner'
 import type { RenderJobKind } from '@/types'
@@ -48,6 +48,32 @@ export const RenderQueue: FC = () => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [anyProcessing])
+
+  // Two-step delete of a job's output file (the trimmed /
+  // split / rendered leftovers): first click arms, second
+  // sends the file to the Recycle Bin and drops the entry.
+  const [confirmFileId, setConfirmFileId] = useState<string | null>(null)
+  const [fileMessage, setFileMessage] = useState<string | null>(null)
+  const handleDeleteOutputFile = async (job: (typeof jobs)[number]) => {
+    if (!job.outputPath) return
+    if (confirmFileId !== job.id) {
+      setConfirmFileId(job.id)
+      window.setTimeout(() => {
+        setConfirmFileId((cur) => (cur === job.id ? null : cur))
+      }, 3500)
+      return
+    }
+    setConfirmFileId(null)
+    const result = await window.electronAPI.deleteFile(job.outputPath)
+    if (!result.success) {
+      setFileMessage(
+        `Could not delete ${job.outputPath}: ${result.error ?? 'unknown error'}`
+      )
+      return
+    }
+    removeJob(job.id)
+    setFileMessage(`Moved the output file to the Recycle Bin: ${job.outputPath}`)
+  }
 
   const timeLine = (job: (typeof jobs)[number]) => {
     if (job.status === 'pending') {
@@ -105,6 +131,10 @@ export const RenderQueue: FC = () => {
         )}
       </div>
 
+      {fileMessage && (
+        <p className="text-sm text-indigo-300">{fileMessage}</p>
+      )}
+
       {jobs.length === 0 ? (
         <div className="bg-gray-900 rounded-lg p-12 border border-gray-800 text-center">
           <p className="text-gray-400">No jobs in queue</p>
@@ -156,12 +186,34 @@ export const RenderQueue: FC = () => {
                     Cancel
                   </button>
                 ) : (
-                  <button
-                    onClick={() => removeJob(job.id)}
-                    className="p-2 hover:bg-gray-800 rounded transition-colors"
-                  >
-                    <Trash2 size={18} className="text-red-500" />
-                  </button>
+                  <>
+                    {job.outputPath && job.status !== 'pending' && (
+                      confirmFileId === job.id ? (
+                        <button
+                          onClick={() => void handleDeleteOutputFile(job)}
+                          className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs font-medium rounded transition-colors whitespace-nowrap"
+                          title="Click again to move the output file to the Recycle Bin"
+                        >
+                          Delete file?
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => void handleDeleteOutputFile(job)}
+                          className="p-2 hover:bg-gray-800 rounded transition-colors"
+                          title="Delete the output file from disk (Recycle Bin) and remove this entry"
+                        >
+                          <FileX2 size={18} className="text-red-400" />
+                        </button>
+                      )
+                    )}
+                    <button
+                      onClick={() => removeJob(job.id)}
+                      className="p-2 hover:bg-gray-800 rounded transition-colors"
+                      title="Remove this entry only (the file stays on disk)"
+                    >
+                      <Trash2 size={18} className="text-red-500" />
+                    </button>
+                  </>
                 )}
               </div>
             </div>

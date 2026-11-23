@@ -22,6 +22,55 @@ import fs from 'fs'
 
 
 
+// GPU safe mode: Chromium's GPU process can crash-loop on
+// laptop GPUs whose driver resets under load (exit 0xC0000409).
+// Count GPU crashes per run; after two, arm a flag file so the
+// NEXT launch disables hardware acceleration and starts clean
+// in software rendering. The heavy GPU work in this app runs in
+// external tools (Real-ESRGAN / RIFE), not in Chromium, so
+// software rendering costs the UI almost nothing. Delete
+// gpu-safemode.json in the userData folder to re-enable.
+const gpuFlagPath = path.join(app.getPath('userData'), 'gpu-safemode.json')
+try {
+  const flag = JSON.parse(fs.readFileSync(gpuFlagPath, 'utf8'))
+  if (flag && flag.disableHardwareAcceleration) {
+    app.disableHardwareAcceleration()
+    LogService.log(
+      'gpu',
+      'hardware acceleration OFF (safe mode armed by an earlier GPU crash)'
+    )
+  }
+} catch {
+  // no flag file yet — normal hardware-accelerated start
+}
+let gpuCrashCount = 0
+app.on('child-process-gone', (_event, details) => {
+  if (details.type !== 'GPU') return
+  gpuCrashCount++
+  LogService.log(
+    'gpu',
+    `GPU process gone: reason=${details.reason} exitCode=${details.exitCode} (crash ${gpuCrashCount} this run)`
+  )
+  if (gpuCrashCount >= 2) {
+    try {
+      fs.mkdirSync(path.dirname(gpuFlagPath), { recursive: true })
+      fs.writeFileSync(
+        gpuFlagPath,
+        JSON.stringify({
+          disableHardwareAcceleration: true,
+          at: new Date().toISOString(),
+        })
+      )
+      LogService.log(
+        'gpu',
+        'safe mode armed — hardware acceleration will be OFF from the next launch'
+      )
+    } catch {
+      // best effort; the log line above already records the crash
+    }
+  }
+})
+
 let mainWindow: BrowserWindow | null = null
 
 function createWindow() {
@@ -181,6 +230,18 @@ ipcMain.handle(
 ipcMain.handle('shell:openFolder', async (_, filePath: string) => {
   try {
     shell.showItemInFolder(filePath)
+    return { success: true }
+  } catch (error) {
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// Delete a file for real — into the Recycle Bin, so a mistaken
+// delete is recoverable from Windows Explorer.
+ipcMain.handle('file:deleteFile', async (_, filePath: string) => {
+  try {
+    await shell.trashItem(filePath)
+    LogService.log('file', `moved to recycle bin: ${filePath}`)
     return { success: true }
   } catch (error) {
     return { success: false, error: (error as Error).message }

@@ -1,5 +1,6 @@
 import { FC, useState } from 'react'
 import { useVideoStore } from '@/stores/videoStore'
+import { useTimelineStore } from '@/stores/timelineStore'
 import { useRenderQueue } from '@/stores/renderQueue'
 import { VideoPreview } from '@/components/VideoPreview'
 import { TimelineEditor } from '@/components/TimelineEditor'
@@ -16,7 +17,7 @@ import type { VideoFile } from '@/types'
 import { Trash2, VolumeX, Volume2, Music, Download, Image, Scaling } from 'lucide-react'
 
 export const Dashboard: FC = () => {
-  const { videos, currentVideo, removeVideo } = useVideoStore()
+  const { videos, currentVideo, removeVideo, setCurrentVideo } = useVideoStore()
   const { jobs } = useRenderQueue()
   const [actionMessage, setActionMessage] = useState<string | null>(null)
 
@@ -105,8 +106,36 @@ export const Dashboard: FC = () => {
   const processingJobs = jobs.filter((j) => j.status === 'processing').length
   const totalDuration = videos.reduce((sum, v) => sum + v.duration, 0)
 
-  const handleRemoveVideo = (id: string) => {
-    removeVideo(id)
+  // Two-step file delete: the first click arms the button,
+  // the second sends the file to the Recycle Bin and removes
+  // every reference to it (library, current video, timeline).
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const handleDeleteVideo = async (video: VideoFile) => {
+    if (confirmDeleteId !== video.id) {
+      setConfirmDeleteId(video.id)
+      window.setTimeout(() => {
+        setConfirmDeleteId((cur) => (cur === video.id ? null : cur))
+      }, 3500)
+      return
+    }
+    setConfirmDeleteId(null)
+    const result = await window.electronAPI.deleteFile(video.path)
+    if (!result.success) {
+      setActionMessage(
+        `Could not delete ${video.name}: ${result.error ?? 'unknown error'}`
+      )
+      return
+    }
+    const timeline = useTimelineStore.getState()
+    timeline.videoClips
+      .filter((c) => c.path === video.path)
+      .forEach((c) => timeline.removeVideoClip(c.id))
+    timeline.audioClips
+      .filter((c) => c.path === video.path)
+      .forEach((c) => timeline.removeAudioClip(c.id))
+    if (currentVideo?.id === video.id) setCurrentVideo(null)
+    removeVideo(video.id)
+    setActionMessage(`Moved ${video.name} to the Recycle Bin.`)
   }
 
   return (
@@ -187,13 +216,23 @@ export const Dashboard: FC = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   {actionButtons(video)}
-                  <button
-                    onClick={() => handleRemoveVideo(video.id)}
-                    className="p-2 hover:bg-red-600/20 text-red-400 rounded transition-colors"
-                    title="Delete video"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                  {confirmDeleteId === video.id ? (
+                    <button
+                      onClick={() => void handleDeleteVideo(video)}
+                      className="px-3 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-medium rounded transition-colors"
+                      title="Click again to move this file to the Recycle Bin"
+                    >
+                      Delete file?
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => void handleDeleteVideo(video)}
+                      className="p-2 hover:bg-red-600/20 text-red-400 rounded transition-colors"
+                      title="Delete this file from disk (moves it to the Recycle Bin) and remove it from the library and the timeline"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
