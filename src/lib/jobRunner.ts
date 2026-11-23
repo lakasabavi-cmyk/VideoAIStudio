@@ -3,7 +3,7 @@ import { useRenderQueue } from '@/stores/renderQueue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { ProcessResult } from '@/types/ipc'
 import type { RenderJob, RenderJobKind, VideoFile } from '@/types'
-import { withSuffix } from './files'
+import { withSuffix, lastFramePath } from './files'
 
 /**
  * Sequential render-queue runner.
@@ -72,6 +72,10 @@ export function enqueueAdjustVolume(video: VideoFile) {
   )
 }
 
+export function enqueueGetLastFrame(video: VideoFile) {
+  enqueue(baseJob('get-last-frame', video, undefined))
+}
+
 export function enqueueExport(video: VideoFile) {
   const { exportFormat, exportQuality } = useSettingsStore.getState()
   enqueue(
@@ -119,6 +123,11 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
         outputPath: withSuffix(job.inputPath, '.music'),
         musicVolume: job.params?.musicVolume ?? 0.5,
         originalVolume: job.params?.originalVolume,
+      })
+    case 'get-last-frame':
+      return api.getLastFrame({
+        videoPath: job.inputPath,
+        outputPath: lastFramePath(job.inputPath),
       })
     case 'export':
       return api.exportVideo({

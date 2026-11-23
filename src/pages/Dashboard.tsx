@@ -5,11 +5,12 @@ import { VideoPreview } from '@/components/VideoPreview'
 import {
   enqueueRemoveSilence,
   enqueueAdjustVolume,
+  enqueueGetLastFrame,
   enqueueAddMusic,
   enqueueExport,
 } from '@/lib/jobRunner'
 import type { VideoFile } from '@/types'
-import { Trash2, VolumeX, Volume2, Music, Download } from 'lucide-react'
+import { Trash2, VolumeX, Volume2, Music, Download, Image } from 'lucide-react'
 
 export const Dashboard: FC = () => {
   const { videos, currentVideo, removeVideo } = useVideoStore()
@@ -55,6 +56,18 @@ export const Dashboard: FC = () => {
         title="Add background music"
       >
         <Music size={16} /> Add Music
+      </button>
+      <button
+        onClick={() => {
+          enqueueGetLastFrame(video)
+          setActionMessage(
+            `Get Last Frame job queued for ${video.name} — the frame is saved into a "first frame" folder next to the video.`
+          )
+        }}
+        className="flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-indigo-600 text-gray-200 text-sm rounded-lg transition-colors"
+        title="Extract the last frame as a PNG into a 'first frame' folder"
+      >
+        <Image size={16} /> Last Frame
       </button>
       <button
         onClick={() => {

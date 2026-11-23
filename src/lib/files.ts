@@ -26,6 +26,21 @@ export function withSuffix(filePath: string, suffix: string): string {
  * "C:\v\clip.mp4" is not a URL and fails both in dev (page served
  * from http://localhost) and in production.
  */
+/**
+ * Where a video's extracted last frame goes:
+ * "C:\\v\\clip.mp4" -> "C:\\v\\first frame\\clip_lastframe.png".
+ * The frame lands in a "first frame" folder next to the video,
+ * ready to be used as the first frame of the next generated clip.
+ */
+export function lastFramePath(filePath: string): string {
+  const sep = filePath.includes('\\') ? '\\' : '/'
+  const parts = filePath.split(sep)
+  const file = parts.pop() ?? filePath
+  const dot = file.lastIndexOf('.')
+  const base = dot > 0 ? file.slice(0, dot) : file
+  return [...parts, 'first frame', `${base}_lastframe.png`].join(sep)
+}
+
 export function toFileUrl(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/')
   const prefix = normalized.startsWith('/') ? 'media://' : 'media:///'

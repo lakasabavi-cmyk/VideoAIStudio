@@ -1,6 +1,7 @@
 import type {
   RemoveSilenceRequest,
   AdjustVolumeRequest,
+  GetLastFrameRequest,
   AddMusicRequest,
   ExportRequest,
   ProcessResult,
@@ -40,6 +41,7 @@ export interface ElectronAPI {
   
   removeSilence: (request: RemoveSilenceRequest) => Promise<ProcessResult>
   adjustVolume: (request: AdjustVolumeRequest) => Promise<ProcessResult>
+  getLastFrame: (request: GetLastFrameRequest) => Promise<ProcessResult>
   addMusic: (request: AddMusicRequest) => Promise<ProcessResult>
   exportVideo: (request: ExportRequest) => Promise<ProcessResult>
   

@@ -38,6 +38,7 @@ export type RenderJobKind =
   | 'add-music'
   | 'export'
   | 'adjust-volume'
+  | 'get-last-frame'
 
 export interface RenderJobParams {
   threshold?: number

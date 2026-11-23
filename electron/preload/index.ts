@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   RemoveSilenceRequest,
   AdjustVolumeRequest,
+  GetLastFrameRequest,
   AddMusicRequest,
   ExportRequest,
 } from '@/types/ipc'
@@ -24,6 +25,9 @@ export const preload = {
 
   adjustVolume: (request: AdjustVolumeRequest) =>
     ipcRenderer.invoke('ffmpeg:adjustVolume', request),
+
+  getLastFrame: (request: GetLastFrameRequest) =>
+    ipcRenderer.invoke('ffmpeg:getLastFrame', request),
 
   addMusic: (request: AddMusicRequest) =>
     ipcRenderer.invoke('ffmpeg:addMusic', request),

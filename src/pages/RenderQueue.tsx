@@ -7,6 +7,7 @@ const KIND_LABELS: Record<RenderJobKind, string> = {
   'remove-silence': 'Remove Silence',
   'add-music': 'Add Music',
   'adjust-volume': 'Adjust Volume',
+  'get-last-frame': 'Get Last Frame',
   export: 'Export',
 }
 

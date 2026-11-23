@@ -35,6 +35,11 @@ export interface AdjustVolumeRequest {
   outputPath?: string
 }
 
+export interface GetLastFrameRequest {
+  videoPath: string
+  outputPath?: string
+}
+
 export interface AddMusicRequest {
   videoPath: string
   musicPath: string

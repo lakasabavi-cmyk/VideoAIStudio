@@ -2,6 +2,8 @@ import ffmpeg from 'fluent-ffmpeg'
 import ffmpegStatic from 'ffmpeg-static'
 import ffprobeStatic from 'ffprobe-static'
 import fs from 'fs'
+import os from 'os'
+import path from 'path'
 
 /**
  * Resolve a bundled binary path.
@@ -332,6 +334,54 @@ export class FFmpegService {
         .on('error', reject)
         .run()
     })
+  }
+
+  /**
+   * Extract the video's LAST frame as a PNG.
+   *
+   * Seeking to an exact timestamp is not frame-accurate enough
+   * for clip chaining (the frame shown at duration-0.1s is not
+   * necessarily the final frame), so this decodes the tail of
+   * the video into a temporary image sequence and keeps the
+   * final image. The window is ~3 frames (min 0.2s, max 1s);
+   * input seeking discards everything before it, so the cost
+   * stays small even for long videos.
+   */
+  static async extractLastFrame(
+    inputPath: string,
+    outputPath: string,
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    const metadata = await FFmpegService.getVideoMetadata(inputPath)
+    const fps = metadata.fps > 0 ? metadata.fps : 30
+    const windowSeconds = Math.min(1, Math.max(0.2, 3 / fps + 0.05))
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'videoai-frame-'))
+    try {
+      const pattern = path.join(tmpDir, 'tail-%04d.png')
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg(inputPath)
+          .inputOptions(['-sseof', `-${windowSeconds.toFixed(3)}`])
+          .output(pattern)
+          .on('end', () => resolve())
+          .on('error', reject)
+          .run()
+      })
+
+      const frames = fs
+        .readdirSync(tmpDir)
+        .filter((f) => f.endsWith('.png'))
+        .sort()
+      if (frames.length === 0) {
+        throw new Error('Could not extract any frame from the video tail')
+      }
+      const lastFrame = path.join(tmpDir, frames[frames.length - 1])
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true })
+      await fs.promises.copyFile(lastFrame, outputPath)
+      onProgress?.(100)
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
   }
 
   /**

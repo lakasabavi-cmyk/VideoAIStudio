@@ -5,6 +5,7 @@ import type {
   VideoImportRequest,
   RemoveSilenceRequest,
   AdjustVolumeRequest,
+  GetLastFrameRequest,
   AddMusicRequest,
   ExportRequest,
   ProcessResult,
@@ -106,6 +107,31 @@ export function setupFFmpegWorkers() {
           request.videoPath,
           outputPath,
           request.volume,
+          progressFor(event)
+        )
+        return done(event, outputPath)
+      } catch (error) {
+        return fail(event, error)
+      }
+    }
+  )
+
+  // Get last frame (saved into a "first frame" folder)
+  ipcMain.handle(
+    'ffmpeg:getLastFrame',
+    async (event, request: GetLastFrameRequest): Promise<ProcessResult> => {
+      try {
+        const parsed = path.parse(request.videoPath)
+        const outputPath =
+          request.outputPath ??
+          path.join(
+            parsed.dir,
+            'first frame',
+            `${parsed.name}_lastframe.png`
+          )
+        await FFmpegService.extractLastFrame(
+          request.videoPath,
+          outputPath,
           progressFor(event)
         )
         return done(event, outputPath)
