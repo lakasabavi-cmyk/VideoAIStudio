@@ -220,7 +220,12 @@ Editor surface:
   target machine while the decode side verified healthy —
   and an all-zero peaks answer is treated as a failed decode
   and retried once; only a second all-zero answer is drawn
-  as real silence.
+  as real silence. Resolution follows the on-screen width:
+  waveform bars are requested at one per ~4 px of block
+  width (64–4000 buckets, service cap 5000) and filmstrip
+  frames at one per ~42 px (4–60), so long clips at wide
+  zoom stay fine-grained instead of stretching a fixed
+  handful of samples across the whole block.
 - Ruler + red playhead; the editor has its own preview player —
   playback walks the clips, switching sources at clip boundaries,
   and the ruler seeks. Zoom goes to 600 px/s (frame level).

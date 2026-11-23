@@ -102,10 +102,19 @@ function clipFile(clip: TimelineVideoClip): VideoFile {
 }
 
 /** Filmstrip of real frames across the clip's kept range. */
-const Filmstrip: FC<{ clip: TimelineVideoClip }> = ({ clip }) => {
+const Filmstrip: FC<{ clip: TimelineVideoClip; pxPerSec: number }> = ({
+  clip,
+  pxPerSec,
+}) => {
   const [urls, setUrls] = useState<string[]>([])
   const kept = keptVideo(clip)
-  const count = Math.max(1, Math.min(14, Math.ceil(kept / 1.2)))
+  // One frame per ~42 px of on-screen block width: the strip
+  // stays fine-grained at any zoom instead of stretching a
+  // fixed handful of frames across a wide block.
+  const count = Math.max(
+    4,
+    Math.min(60, Math.round((kept * pxPerSec) / 42))
+  )
   const key = `${clip.path}|${clip.trimStart.toFixed(1)}|${clip.trimEnd.toFixed(1)}|${count}`
   useEffect(() => {
     let alive = true
@@ -154,13 +163,20 @@ const Filmstrip: FC<{ clip: TimelineVideoClip }> = ({ clip }) => {
  * painting proved unreliable on the target machine while the
  * decode side was verified healthy — DOM bars go through the
  * normal layout/paint path and cannot get lost that way. */
-const Waveform: FC<{ clip: TimelineAudioClip; color: string }> = ({
-  clip,
-  color,
-}) => {
+const Waveform: FC<{
+  clip: TimelineAudioClip
+  color: string
+  pxPerSec: number
+}> = ({ clip, color, pxPerSec }) => {
   const [peaks, setPeaks] = useState<number[] | null>(null)
   const kept = keptAudio(clip)
-  const buckets = Math.max(16, Math.min(240, Math.round(kept * 12)))
+  // One bar per ~4 px of on-screen block width: a long clip at
+  // wide zoom gets thousands of samples of resolution instead
+  // of a fixed 240 slabs stretched across the whole block.
+  const buckets = Math.max(
+    64,
+    Math.min(4000, Math.round((kept * pxPerSec) / 4))
+  )
   const key = `${clip.path}|${clip.trimStart.toFixed(1)}|${clip.trimEnd.toFixed(1)}|${buckets}`
   useEffect(() => {
     let alive = true
@@ -1660,7 +1676,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                   }`}
                   title={clip.path}
                 >
-                  <Filmstrip clip={clip} />
+                  <Filmstrip clip={clip} pxPerSec={pxPerSec} />
                   <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1.5 py-0.5 flex items-center gap-1 pointer-events-none">
                     <span className="text-[10px] text-white truncate">{clip.name}</span>
                     <span className="text-[10px] text-gray-300 shrink-0">{fmtT(kept)}</span>
@@ -1787,7 +1803,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                         }`}
                         title={clip.path}
                       >
-                        <Waveform clip={clip} color={lane.wave} />
+                        <Waveform clip={clip} color={lane.wave} pxPerSec={pxPerSec} />
                         <div className="absolute top-0 left-0 bg-black/55 rounded-br px-1.5 py-0.5 pointer-events-none max-w-full">
                           <span className="text-[10px] text-white truncate block">
                             {clip.name} • {fmtT(kept)} • vol {clip.volume}%

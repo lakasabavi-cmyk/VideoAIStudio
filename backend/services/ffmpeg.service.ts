@@ -927,7 +927,7 @@ export class FFmpegService {
     buckets: number
   ): Promise<number[]> {
     const length = Math.max(0.1, endSeconds - startSeconds)
-    const count = Math.min(400, Math.max(8, Math.floor(buckets)))
+    const count = Math.min(5000, Math.max(8, Math.floor(buckets)))
     const key = createHash('sha1')
       .update(
         `${mediaPath}|${startSeconds.toFixed(2)}|${endSeconds.toFixed(2)}|${count}`
