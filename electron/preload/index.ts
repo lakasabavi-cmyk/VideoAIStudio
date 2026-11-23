@@ -43,6 +43,8 @@ export const preload = {
   exportVideo: (request: ExportRequest) =>
     ipcRenderer.invoke('ffmpeg:export', request),
 
+  getSystemStats: () => ipcRenderer.invoke('system:stats'),
+
   // Progress tracking
   onRenderProgress: (callback: (update: { progress: number; stage?: string }) => void) =>
     ipcRenderer.on('render:progress', (_, payload) =>

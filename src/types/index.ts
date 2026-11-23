@@ -96,6 +96,9 @@ export interface RenderJob {
   /** Current pipeline stage label (e.g. "Extract Frames"), when the
    * running job reports stages. Shown in the Render Queue. */
   stage?: string
+  /** When the job actually started / finished processing. */
+  startedAt?: Date
+  finishedAt?: Date
   outputPath?: string
   error?: string
   createdAt: Date

@@ -1,6 +1,7 @@
 import { FC, useState } from 'react'
 import { Save, Check } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { SystemMonitor } from '@/components/SystemMonitor'
 import type { ProjectSettings } from '@/types'
 
 export const Settings: FC = () => {
@@ -363,6 +364,8 @@ export const Settings: FC = () => {
           {saved ? <Check size={20} /> : <Save size={20} />}
           {saved ? 'Saved!' : 'Save Settings'}
         </button>
+
+        <SystemMonitor />
       </div>
     </div>
   )

@@ -90,6 +90,24 @@ for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
   the executable or model is missing the job fails immediately
   with a message saying what to set in Settings.
 
+## Render Queue job timing (added 2026-11-23)
+
+- Every job records when it started and finished. The Render
+  Queue shows a time line under each job: queued clock time for
+  pending jobs; "Started HH:MM:SS · Elapsed MM:SS · ETA ~MM:SS"
+  (ticking every second, ETA from progress) while processing;
+  "Took MM:SS · Finished HH:MM:SS" when done.
+
+## System Monitor (added 2026-11-23)
+
+- A live panel at the bottom of the Settings page, refreshed
+  every 2 seconds while the page is open: CPU load, RAM
+  used/total, GPU utilisation, VRAM used/total and GPU
+  temperature (via nvidia-smi; needs the NVIDIA driver). CPU
+  temperature is shown when Windows exposes it via WMI,
+  otherwise "n/a". Bars turn amber at 70% and red at 90%
+  (or when the GPU reaches 85°C).
+
 ## Export
 
 - Re-encodes with explicit codecs (libx264 / yuv420p / AAC).

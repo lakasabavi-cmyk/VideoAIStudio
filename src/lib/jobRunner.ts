@@ -245,6 +245,7 @@ async function processQueue() {
     ...next,
     status: 'processing',
     progress: 0,
+    startedAt: new Date(),
     updatedAt: new Date(),
   }
   updateJob(job)
@@ -258,6 +259,7 @@ async function processQueue() {
       progress: result.success ? 100 : job.progress,
       outputPath: result.outputPath,
       error: result.success ? undefined : result.error ?? 'Unknown error',
+      finishedAt: new Date(),
       updatedAt: new Date(),
     })
   } catch (error) {
@@ -265,6 +267,7 @@ async function processQueue() {
       ...job,
       status: 'failed',
       error: (error as Error).message,
+      finishedAt: new Date(),
       updatedAt: new Date(),
     })
   } finally {

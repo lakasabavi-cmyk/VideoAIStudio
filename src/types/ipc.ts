@@ -66,6 +66,23 @@ export interface RenderProgressUpdate {
   stage?: string
 }
 
+export interface SystemStats {
+  cpuPercent: number
+  ramUsedGB: number
+  ramTotalGB: number
+  ramPercent: number
+  /** Present when nvidia-smi answered (NVIDIA GPU + driver). */
+  gpu?: {
+    name: string
+    utilPercent: number
+    vramUsedMB: number
+    vramTotalMB: number
+    tempC: number
+  }
+  /** CPU temperature when the OS exposes it (WMI thermal zone). */
+  cpuTempC?: number
+}
+
 export interface AddMusicRequest {
   videoPath: string
   musicPath: string

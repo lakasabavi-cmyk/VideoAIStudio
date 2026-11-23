@@ -5,6 +5,7 @@ import type {
   MergeVideosRequest,
   UpscaleRequest,
   RenderProgressUpdate,
+  SystemStats,
   AddMusicRequest,
   ExportRequest,
   ProcessResult,
@@ -47,6 +48,7 @@ export interface ElectronAPI {
   getLastFrame: (request: GetLastFrameRequest) => Promise<ProcessResult>
   mergeVideos: (request: MergeVideosRequest) => Promise<ProcessResult>
   upscaleVideo: (request: UpscaleRequest) => Promise<ProcessResult>
+  getSystemStats: () => Promise<SystemStats>
   addMusic: (request: AddMusicRequest) => Promise<ProcessResult>
   exportVideo: (request: ExportRequest) => Promise<ProcessResult>
   

@@ -1,6 +1,6 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import path from 'path'
-import { FFmpegService } from '../services'
+import { FFmpegService, SystemService } from '../services'
 import type {
   VideoImportRequest,
   RemoveSilenceRequest,
@@ -159,6 +159,9 @@ export function setupFFmpegWorkers() {
       }
     }
   )
+
+  // System monitor (CPU / RAM / GPU / temperatures)
+  ipcMain.handle('system:stats', async () => SystemService.getStats())
 
   // Upscale (Lanczos quick, or Real-ESRGAN ncnn-vulkan pipeline)
   ipcMain.handle(

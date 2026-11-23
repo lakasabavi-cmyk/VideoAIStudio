@@ -1,4 +1,4 @@
-import { FC } from 'react'
+import { FC, useEffect, useState } from 'react'
 import { Trash2, CheckCircle, AlertCircle, Loader } from 'lucide-react'
 import { useRenderQueue } from '@/stores/renderQueue'
 import type { RenderJobKind } from '@/types'
@@ -13,8 +13,55 @@ const KIND_LABELS: Record<RenderJobKind, string> = {
   export: 'Export',
 }
 
+function formatClock(date?: Date): string {
+  if (!date) return ''
+  return new Date(date).toLocaleTimeString([], { hour12: false })
+}
+
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const mm = String(minutes).padStart(2, '0')
+  const ss = String(seconds).padStart(2, '0')
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
 export const RenderQueue: FC = () => {
   const { jobs, removeJob, clearCompleted } = useRenderQueue()
+
+  // Tick once a second while any job is processing so the elapsed
+  // time and ETA stay live.
+  const [now, setNow] = useState(() => Date.now())
+  const anyProcessing = jobs.some((j) => j.status === 'processing')
+  useEffect(() => {
+    if (!anyProcessing) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [anyProcessing])
+
+  const timeLine = (job: (typeof jobs)[number]) => {
+    if (job.status === 'pending') {
+      return `Queued ${formatClock(job.createdAt)}`
+    }
+    if (!job.startedAt) return ''
+    const started = new Date(job.startedAt).getTime()
+    if (job.status === 'processing') {
+      const elapsed = now - started
+      let line = `Started ${formatClock(job.startedAt)} · Elapsed ${formatDuration(elapsed)}`
+      if (job.progress >= 5 && job.progress < 100) {
+        const etaMs = (elapsed * (100 - job.progress)) / job.progress
+        line += ` · ETA ~${formatDuration(etaMs)}`
+      }
+      return line
+    }
+    if (job.finishedAt) {
+      const took = new Date(job.finishedAt).getTime() - started
+      return `Took ${formatDuration(took)} · Finished ${formatClock(job.finishedAt)}`
+    }
+    return ''
+  }
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -74,6 +121,7 @@ export const RenderQueue: FC = () => {
                       Stage: {job.stage}
                     </p>
                   )}
+                  <p className="text-xs text-gray-500 mt-1">{timeLine(job)}</p>
                   {job.status === 'completed' && job.outputPath && (
                     <p className="text-sm text-green-400 mt-2 break-all">
                       Output: {job.outputPath}
