@@ -309,3 +309,25 @@ from `media:duration` (`getMediaDuration`), because
   previously hard-wired to 4x and made it crawl on an 8GB
   laptop GPU. Setting: `esrgan4xModel` (persisted; older
   settings without it default to Fast).
+
+## ESRGAN model picker + sharpen pass (v0.2.0)
+
+- Settings gains an **ESRGAN model** dropdown: Auto (the
+  previous behaviour — model follows the scale, with the
+  4x Fast/Quality pick), any of the six built-in models of
+  the standard pack (each fixes its own scale:
+  animevideov3-x2/x3/x4, realesrgan-x4plus,
+  realesrgan-x4plus-anime, realesrnet-x4plus), or Custom —
+  type any model name present in the models folder and use
+  the scale buttons. The service already stops the job
+  immediately when the model's .param file is missing.
+  This answers the plastic look of the light video models:
+  the photo models keep far more real detail.
+- **Sharpen after upscale**: Off / Light (default) / Medium
+  / Strong, applied as an ffmpeg `unsharp` pass in the
+  Rebuild encode. Verified against the real service with a
+  stub ESRGAN binary: edge energy 8.9 (Off) -> 15.5
+  (Strong) on a test pattern.
+- Version: package.json is the single source of truth
+  (0.2.0); vite injects it as `__APP_VERSION__` and the
+  sidebar + dashboard read it from there.

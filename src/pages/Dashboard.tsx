@@ -142,7 +142,7 @@ export const Dashboard: FC = () => {
     <div className="p-8 space-y-8">
       <div>
         <h1 className="text-4xl font-bold text-white mb-2">Dashboard</h1>
-        <p className="text-gray-400">Welcome to VideoAIStudio v0.1</p>
+        <p className="text-gray-400">Welcome to VideoAIStudio v{__APP_VERSION__}</p>
       </div>
 
       <div className="grid grid-cols-4 gap-6">

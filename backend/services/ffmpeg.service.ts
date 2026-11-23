@@ -1269,6 +1269,17 @@ export class FFmpegService {
     }
     const scale = request.scale ?? 4
     const model = request.model ?? 'realesrgan-x4plus'
+    // Optional sharpen pass in the rebuild encode — counters
+    // the plastic over-smoothing of the light video models.
+    const SHARPEN_FILTERS = {
+      light: 'unsharp=5:5:0.5:5:5:0.0',
+      medium: 'unsharp=5:5:1.0:5:5:0.0',
+      strong: 'unsharp=7:7:1.4:5:5:0.0',
+    } as const
+    const sharpenFilter =
+      request.sharpen && request.sharpen !== 'off'
+        ? SHARPEN_FILTERS[request.sharpen]
+        : null
     const modelsPath =
       request.modelsPath?.trim() ||
       path.join(path.dirname(exePath), 'models')
@@ -1318,6 +1329,7 @@ export class FFmpegService {
       `start input=${path.basename(request.videoPath)} ` +
         `${metadata.width}x${metadata.height} ${metadata.duration.toFixed(1)}s ` +
         `scale=${scale} model=${model} tile=${request.tileSize ?? 0} ` +
+        `sharpen=${request.sharpen ?? 'off'} ` +
         `rife=${rife ? `${rifeMultiplier}x` : 'off'}`
     )
     const statsSampler = setInterval(async () => {
@@ -1475,6 +1487,7 @@ export class FFmpegService {
             ...(metadata.audioCodec ? ['-map', '1:a', '-c:a', 'copy'] : []),
             '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
             '-pix_fmt', 'yuv420p',
+            ...(sharpenFilter ? ['-vf', sharpenFilter] : []),
             '-r', String(outputFps),
           ])
           .output(request.outputPath)

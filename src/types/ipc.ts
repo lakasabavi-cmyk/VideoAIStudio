@@ -58,6 +58,8 @@ export interface UpscaleRequest {
   modelsPath?: string
   /** Tile size in px for the ncnn binary (0/undefined = auto). */
   tileSize?: number
+  /** Sharpen pass (ffmpeg unsharp) during the rebuild stage. */
+  sharpen?: 'off' | 'light' | 'medium' | 'strong'
   /** Optional RIFE interpolation stage (runs before the upscale). */
   rife?: { exePath: string; modelPath: string; multiplier: number }
 }

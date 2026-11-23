@@ -18,6 +18,9 @@ export const Settings: FC = () => {
     lanczosTarget: stored.lanczosTarget,
     esrganScale: stored.esrganScale,
     esrgan4xModel: stored.esrgan4xModel ?? 'fast',
+    esrganModel: stored.esrganModel ?? '',
+    esrganCustomModel: stored.esrganCustomModel ?? '',
+    esrganSharpen: stored.esrganSharpen ?? 'light',
     esrganTileSize: stored.esrganTileSize,
     esrganPath: stored.esrganPath,
     esrganModelsPath: stored.esrganModelsPath,
@@ -304,30 +307,69 @@ export const Settings: FC = () => {
                 )}
               </div>
               <div className="border-t border-gray-800 pt-4">
-                <label className="text-gray-300 text-sm">Scale / model</label>
-                <div className="flex gap-2 mt-2">
-                  {([2, 3, 4] as const).map((scale) => (
-                    <button
-                      key={scale}
-                      onClick={() => setDraft({ ...draft, esrganScale: scale })}
-                      className={
-                        'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
-                        (draft.esrganScale === scale
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
-                      }
-                    >
-                      {scale}x
-                    </button>
-                  ))}
-                </div>
+                <label className="text-gray-300 text-sm">ESRGAN model</label>
+                <select
+                  value={draft.esrganModel}
+                  onChange={(e) =>
+                    setDraft({ ...draft, esrganModel: e.target.value })
+                  }
+                  className="w-full mt-2 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
+                >
+                  <option value="">Auto — model follows the scale below</option>
+                  <option value="realesr-animevideov3-x2">realesr-animevideov3-x2 · 2x · light video model (fast, can look plastic)</option>
+                  <option value="realesr-animevideov3-x3">realesr-animevideov3-x3 · 3x · light video model (fast, can look plastic)</option>
+                  <option value="realesr-animevideov3-x4">realesr-animevideov3-x4 · 4x · light video model (fast, can look plastic)</option>
+                  <option value="realesrgan-x4plus">realesrgan-x4plus · 4x · photo model, most detail, slowest</option>
+                  <option value="realesrgan-x4plus-anime">realesrgan-x4plus-anime · 4x · lighter photo model (drawn / AI content)</option>
+                  <option value="realesrnet-x4plus">realesrnet-x4plus · 4x · photo model without GAN texture (smoother)</option>
+                  <option value="custom">Custom — type any model name from the models folder</option>
+                </select>
+                {draft.esrganModel === 'custom' && (
+                  <input
+                    type="text"
+                    value={draft.esrganCustomModel}
+                    onChange={(e) =>
+                      setDraft({ ...draft, esrganCustomModel: e.target.value })
+                    }
+                    placeholder="e.g. realesr-general-x4v3"
+                    className="w-full mt-2 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
+                  />
+                )}
                 <p className="text-xs text-gray-500 mt-2">
-                  2x and 3x use realesr-animevideov3 (lightweight video
-                  model). Saved as name_2x.mp4 / name_4x.mp4.
+                  A picked model fixes its own scale. If the model file
+                  is not in the models folder, the job stops right away
+                  with a clear message instead of failing mid-run.
                 </p>
-                {draft.esrganScale === 4 && (
+                {(draft.esrganModel === '' || draft.esrganModel === 'custom') && (
+                  <>
+                    <label className="block text-gray-300 text-sm mt-4">Scale</label>
+                    <div className="flex gap-2 mt-2">
+                      {([2, 3, 4] as const).map((scale) => (
+                        <button
+                          key={scale}
+                          onClick={() => setDraft({ ...draft, esrganScale: scale })}
+                          className={
+                            'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
+                            (draft.esrganScale === scale
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
+                          }
+                        >
+                          {scale}x
+                        </button>
+                      ))}
+                    </div>
+                    {draft.esrganModel === '' && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Auto: 2x and 3x use realesr-animevideov3. Saved as
+                        name_2x.mp4 / name_4x.mp4.
+                      </p>
+                    )}
+                  </>
+                )}
+                {draft.esrganModel === '' && draft.esrganScale === 4 && (
                   <div className="mt-4">
-                    <label className="text-gray-300 text-sm">4x model</label>
+                    <label className="text-gray-300 text-sm">4x model (Auto)</label>
                     <div className="flex gap-2 mt-2">
                       {(
                         [
@@ -359,6 +401,43 @@ export const Settings: FC = () => {
                     </p>
                   </div>
                 )}
+              </div>
+              <div>
+                <label className="text-gray-300 text-sm">
+                  Sharpen after upscale
+                </label>
+                <div className="flex gap-2 mt-2">
+                  {(
+                    [
+                      { value: 'off', label: 'Off' },
+                      { value: 'light', label: 'Light' },
+                      { value: 'medium', label: 'Medium' },
+                      { value: 'strong', label: 'Strong' },
+                    ] as const
+                  ).map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() =>
+                        setDraft({ ...draft, esrganSharpen: option.value })
+                      }
+                      className={
+                        'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
+                        (draft.esrganSharpen === option.value
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
+                      }
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  A sharpen pass while the upscaled frames are rebuilt
+                  into video — it brings back edge detail the light
+                  video models smooth away (the plastic look). Light
+                  is a gentle default; raise it only if the picture
+                  still looks waxy.
+                </p>
               </div>
               <div>
                 <label className="text-gray-300 text-sm">

@@ -124,6 +124,42 @@ function esrganModel(
   return ESRGAN_MODELS[scale]
 }
 
+/** Built-in models from the standard realesrgan-ncnn-vulkan
+ * pack, with the scale each model is built for. The service
+ * checks the model file exists before a job starts, so a
+ * name missing from the user's pack fails fast and clearly. */
+export const ESRGAN_MODEL_SCALES: Record<string, 2 | 3 | 4> = {
+  'realesr-animevideov3-x2': 2,
+  'realesr-animevideov3-x3': 3,
+  'realesr-animevideov3-x4': 4,
+  'realesrgan-x4plus': 4,
+  'realesrgan-x4plus-anime': 4,
+  'realesrnet-x4plus': 4,
+}
+
+/** Resolve the Settings model choice to a concrete model
+ * name + scale: a built-in model fixes its own scale, a
+ * custom name uses the scale buttons, and Auto follows the
+ * scale (with the fast/quality pick at 4x). */
+export function resolveEsrganModel(settings: {
+  esrganModel: string
+  esrganCustomModel: string
+  esrganScale: 2 | 3 | 4
+  esrgan4xModel: 'fast' | 'quality'
+}): { model: string; scale: 2 | 3 | 4 } {
+  const chosen = settings.esrganModel
+  if (chosen === 'custom') {
+    const name = settings.esrganCustomModel.trim()
+    if (name) return { model: name, scale: settings.esrganScale }
+  } else if (chosen && ESRGAN_MODEL_SCALES[chosen]) {
+    return { model: chosen, scale: ESRGAN_MODEL_SCALES[chosen] }
+  }
+  return {
+    model: esrganModel(settings.esrganScale, settings.esrgan4xModel),
+    scale: settings.esrganScale,
+  }
+}
+
 export function enqueueUpscale(
   video: VideoFile,
   forceRife = false
@@ -133,6 +169,12 @@ export function enqueueUpscale(
   if (settings.upscaleMethod === 'realesrgan' || forceRife) {
     if (!settings.esrganPath.trim()) {
       return 'Set the Real-ESRGAN executable path in Settings first.'
+    }
+    if (
+      settings.esrganModel === 'custom' &&
+      !settings.esrganCustomModel.trim()
+    ) {
+      return 'Type the custom ESRGAN model name in Settings first.'
     }
     const rife = wantRife
       ? {
@@ -144,18 +186,20 @@ export function enqueueUpscale(
     if (wantRife && !settings.rifePath.trim()) {
       return 'RIFE is enabled but its executable path is not set in Settings.'
     }
+    const resolved = resolveEsrganModel(settings)
     enqueue(
       baseJob('upscale', video, {
         upscale: {
           method: 'realesrgan',
-          scale: settings.esrganScale,
-          model: esrganModel(settings.esrganScale, settings.esrgan4xModel),
+          scale: resolved.scale,
+          model: resolved.model,
           exePath: settings.esrganPath,
           modelsPath: settings.esrganModelsPath,
           tileSize: settings.esrganTileSize,
+          sharpen: settings.esrganSharpen,
           rife,
           outputSuffix:
-            `_${settings.esrganScale}x` +
+            `_${resolved.scale}x` +
             (rife ? `_rife${settings.rifeMultiplier}x` : ''),
         },
       })
@@ -401,6 +445,7 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
         exePath: upscale.exePath,
         modelsPath: upscale.modelsPath,
         tileSize: upscale.tileSize,
+        sharpen: upscale.sharpen,
         rife: upscale.rife,
       })
     }

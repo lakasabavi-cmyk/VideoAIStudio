@@ -19,7 +19,7 @@ export const Sidebar: FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
     <aside className="w-64 bg-gray-900 border-r border-gray-800 h-full overflow-y-auto flex flex-col">
       <div className="p-6">
         <h1 className="text-2xl font-bold text-indigo-500">VideoAI</h1>
-        <p className="text-sm text-gray-400">Studio v0.1</p>
+        <p className="text-sm text-gray-400">Studio v{__APP_VERSION__}</p>
       </div>
 
       <nav className="space-y-2 px-4">

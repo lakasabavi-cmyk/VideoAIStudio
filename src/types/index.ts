@@ -42,6 +42,17 @@ export interface ProjectSettings {
    * (heavy photo model — sharper on real photos, several
    * times slower). */
   esrgan4xModel: 'fast' | 'quality'
+  /** ESRGAN model choice: '' = Auto (model follows the scale,
+   * using esrgan4xModel at 4x); a built-in model name (its
+   * scale is fixed by the model); or 'custom' to type any
+   * model name found in the models folder. */
+  esrganModel: string
+  /** Model name when esrganModel is 'custom'. */
+  esrganCustomModel: string
+  /** Sharpen pass applied while rebuilding the upscaled
+   * video — counters the plastic smoothing of the light
+   * video models. */
+  esrganSharpen: 'off' | 'light' | 'medium' | 'strong'
   /** Real-ESRGAN tile size in px (0 = auto). Lower it (e.g. 256)
    * when a job dies with out-of-memory on large frames. */
   esrganTileSize: number
@@ -94,6 +105,7 @@ export interface RenderJobParams {
     modelsPath?: string
     rife?: { exePath: string; modelPath: string; multiplier: number }
     tileSize?: number
+    sharpen?: 'off' | 'light' | 'medium' | 'strong'
     outputSuffix: string
   }
   format?: 'mp4' | 'webm' | 'mov'
