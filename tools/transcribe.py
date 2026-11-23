@@ -22,7 +22,20 @@ Word strings are stored trimmed; display spacing is the app's job.
 import argparse
 import json
 import os
+import re
 import sys
+
+# Stock phrases Whisper fabricates on Vietnamese music and
+# silence. They come from the YouTube subtitles in its training
+# data (subscribe pleas are everywhere there, and Ghien Mi Go is
+# one of the biggest Vietnamese channels in it), not from the
+# audio being transcribed. A segment matching one of these is
+# dropped whole.
+HALLUCINATION_PATTERNS = [
+    re.compile(r"subscribe cho kênh", re.IGNORECASE),
+    re.compile(r"để không bỏ lỡ những video", re.IGNORECASE),
+    re.compile(r"ghiền mì gõ", re.IGNORECASE),
+]
 
 
 def stage(text):
@@ -104,6 +117,14 @@ def main():
                 word_timestamps=True,
                 vad_filter=use_vad,
                 vad_parameters={"min_silence_duration_ms": 500} if use_vad else None,
+                # Anti-hallucination settings: do not condition
+                # each window on the previous text (fabrications
+                # snowball when it does), and skip long silences
+                # that precede a hallucinated segment.
+                condition_on_previous_text=False,
+                log_prob_threshold=-1.0,
+                no_speech_threshold=0.6,
+                hallucination_silence_threshold=2.0,
             )
             duration = float(info.duration or 0)
             collected = []
@@ -119,6 +140,11 @@ def main():
                         "word": text,
                         "probability": round(float(w.probability), 3),
                     })
+                if words:
+                    seg_text = " ".join(w["word"] for w in words)
+                    if any(p.search(seg_text)
+                           for p in HALLUCINATION_PATTERNS):
+                        words = []
                 if words:
                     collected.append({
                         "start": round(float(seg.start), 3),

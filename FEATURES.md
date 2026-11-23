@@ -461,3 +461,19 @@ from `media:duration` (`getMediaDuration`), because
   that does), and transcribe.py registers every
   nvidia/*/bin folder under site-packages with
   os.add_dll_directory so the GPU path can find them.
+  v0.3.7: anti-hallucination pass for transcribe.py. On a
+  music clip Hung's large-v3 run fabricated the stock
+  YouTube plea "Hay subscribe cho kenh Ghien Mi Go..." —
+  text that is not in the audio at all; Whisper learned it
+  from the subtitle corpora it was trained on and emits it
+  over music/silence. Fixes: condition_on_previous_text
+  off (fabrications snowball when windows condition on
+  them), hallucination_silence_threshold 2.0, explicit
+  log_prob/no_speech thresholds, plus a segment filter
+  dropping the known Vietnamese stock phrases (subscribe
+  plea / Ghien Mi Go). Verified with the tiny model: the
+  Lap Dong singing clip still yields its 31 words and no
+  subscribe text. Known limit: the tiny model still
+  invents gibberish lyrics over instrumental-only audio
+  on the no-VAD pass — that pass exists for singing, so
+  it stays; large-v3 on real vocals is the target case.
