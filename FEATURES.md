@@ -435,3 +435,12 @@ from `media:duration` (`getMediaDuration`), because
   LF-only (canonical form); eol=crlf still produces a
   CRLF file on Windows checkout, and status stays clean.
   Rule: never push CRLF bytes for a text file again.
+  v0.3.5: setup-whisper.bat now logs every Python the
+  py launcher can see (py -0p) and stops BEFORE building
+  anything when the selected Python is not 3.12/3.13,
+  printing the one-command fix (winget install
+  Python.Python.3.13). Hung's machine kept building the
+  env with 3.14: python.org's main download button hands
+  out the newest release (3.14 again), so "install 3.13
+  from python.org" needs the winget id or the specific
+  release page, not the front-page button.

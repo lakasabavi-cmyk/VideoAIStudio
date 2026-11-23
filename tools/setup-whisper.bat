@@ -46,6 +46,20 @@ if %errorlevel% neq 0 (
   exit /b 1
 )
 for /f "tokens=*" %%v in ('%PYLAUNCH% --version') do echo Using %%v
+echo Installed Pythons according to the py launcher:
+py -0p 2>nul
+REM Stop early when the selected Python cannot install PyAV,
+REM instead of building an environment that is doomed to fail.
+%PYLAUNCH% -c "import sys; raise SystemExit(0 if sys.version_info[:2] in ((3,12),(3,13)) else 1)" >nul 2>nul
+if %errorlevel% neq 0 (
+  echo.
+  echo The Python selected above is not 3.12 or 3.13, so the
+  echo install cannot work with it. Install Python 3.13 64-bit
+  echo and run this file again. Easiest way: open a terminal
+  echo and run this command, then run this file again:
+  echo winget install Python.Python.3.13
+  exit /b 1
+)
 
 REM Recreate the environment if a previous run built it with an
 REM unsuitable Python such as 3.14, which cannot install PyAV.
