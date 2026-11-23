@@ -17,6 +17,11 @@ import type {
   ThumbnailsRequest,
   WaveformRequest,
   FrameExtractRequest,
+  TranscribeRequest,
+  TranscriptData,
+  SubtitleExportRequest,
+  TranscriptCutsRequest,
+  BurnSubtitlesRequest,
 } from '@/types/ipc'
 
 export const preload = {
@@ -90,6 +95,24 @@ export const preload = {
     ipcRenderer.invoke('file:deleteFile', filePath),
 
   getLogTail: () => ipcRenderer.invoke('log:getTail'),
+
+  transcribeVideo: (request: TranscribeRequest) =>
+    ipcRenderer.invoke('transcript:transcribe', request),
+
+  loadTranscript: (request: { videoPath: string }) =>
+    ipcRenderer.invoke('transcript:load', request),
+
+  saveTranscript: (request: { videoPath: string; data: TranscriptData }) =>
+    ipcRenderer.invoke('transcript:save', request),
+
+  exportSubtitles: (request: SubtitleExportRequest) =>
+    ipcRenderer.invoke('transcript:exportSubtitles', request),
+
+  applyTranscriptCuts: (request: TranscriptCutsRequest) =>
+    ipcRenderer.invoke('transcript:applyCuts', request),
+
+  burnSubtitles: (request: BurnSubtitlesRequest) =>
+    ipcRenderer.invoke('transcript:burnSubtitles', request),
   openLogFile: () => ipcRenderer.invoke('log:openFile'),
 
   getSystemStats: () => ipcRenderer.invoke('system:stats'),

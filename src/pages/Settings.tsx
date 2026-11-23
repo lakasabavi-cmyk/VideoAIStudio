@@ -28,6 +28,9 @@ export const Settings: FC = () => {
     rifeMultiplier: stored.rifeMultiplier,
     rifePath: stored.rifePath,
     rifeModelPath: stored.rifeModelPath,
+    whisperPythonPath: stored.whisperPythonPath ?? '',
+    whisperModel: stored.whisperModel ?? 'large-v3',
+    whisperLanguage: stored.whisperLanguage ?? 'vi',
   })
   const [saved, setSaved] = useState(false)
 
@@ -507,6 +510,70 @@ export const Settings: FC = () => {
 
             </div>
           )}
+        </div>
+
+        <div className="bg-gray-900 rounded-lg p-6 space-y-4">
+          <h2 className="text-xl font-bold text-white">
+            Transcript (faster-whisper)
+          </h2>
+          <p className="text-sm text-gray-400">
+            Speech recognition for the Transcript Editor tab. One-time
+            setup: run <code>tools\setup-whisper.bat</code> from the
+            app folder, then paste the python.exe path it prints.
+            The model downloads automatically on the first
+            transcription (large-v3 is about 3 GB).
+          </p>
+          <div>
+            <label className="text-sm text-gray-300">
+              faster-whisper python (python.exe)
+              <input
+                type="text"
+                value={draft.whisperPythonPath}
+                onChange={(e) =>
+                  setDraft({ ...draft, whisperPythonPath: e.target.value })
+                }
+                placeholder="C:\\...\\VideoAIStudio\\tools\\whisper-env\\Scripts\\python.exe"
+                className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
+              />
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm text-gray-300">
+                Model
+                <select
+                  value={draft.whisperModel}
+                  onChange={(e) =>
+                    setDraft({ ...draft, whisperModel: e.target.value })
+                  }
+                  className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
+                >
+                  <option value="large-v3">large-v3 (best Vietnamese)</option>
+                  <option value="large-v3-turbo">large-v3-turbo (faster)</option>
+                  <option value="medium">medium</option>
+                  <option value="small">small</option>
+                  <option value="base">base</option>
+                  <option value="tiny">tiny (test only)</option>
+                </select>
+              </label>
+            </div>
+            <div>
+              <label className="text-sm text-gray-300">
+                Language
+                <select
+                  value={draft.whisperLanguage}
+                  onChange={(e) =>
+                    setDraft({ ...draft, whisperLanguage: e.target.value })
+                  }
+                  className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
+                >
+                  <option value="vi">Vietnamese</option>
+                  <option value="auto">Auto-detect</option>
+                  <option value="en">English</option>
+                </select>
+              </label>
+            </div>
+          </div>
         </div>
 
         <button

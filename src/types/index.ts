@@ -24,6 +24,12 @@ export interface Project {
 
 export interface ProjectSettings {
   removeSilence: boolean
+  /** python.exe of the faster-whisper environment (Settings). */
+  whisperPythonPath: string
+  /** faster-whisper model name, e.g. 'large-v3'. */
+  whisperModel: string
+  /** Transcription language: 'vi', 'en', ... or 'auto'. */
+  whisperLanguage: string
   silenceThreshold: number
   backgroundMusic?: string
   musicVolume: number
@@ -85,8 +91,13 @@ export type RenderJobKind =
   | 'transform'
   | 'timeline'
   | 'compose'
+  | 'transcribe'
+  | 'transcript-cuts'
+  | 'burn-subtitles'
 
 export interface RenderJobParams {
+  /** Transcribe job snapshot (whisper settings at enqueue time). */
+  transcribe?: { pythonPath: string; model: string; language: string }
   threshold?: number
   musicPath?: string
   musicVolume?: number

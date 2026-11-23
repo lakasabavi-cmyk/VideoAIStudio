@@ -69,6 +69,36 @@ function baseJob(
   }
 }
 
+/** Returns an error message instead of enqueueing when setup is missing. */
+export function enqueueTranscribe(video: VideoFile): string | null {
+  const { whisperPythonPath, whisperModel, whisperLanguage } =
+    useSettingsStore.getState()
+  if (!whisperPythonPath) {
+    return (
+      'faster-whisper python is not set. Run tools/setup-whisper.bat ' +
+      'once, then set the python path in Settings > Transcript.'
+    )
+  }
+  enqueue(
+    baseJob('transcribe', video, {
+      transcribe: {
+        pythonPath: whisperPythonPath,
+        model: whisperModel,
+        language: whisperLanguage,
+      },
+    })
+  )
+  return null
+}
+
+export function enqueueTranscriptCuts(video: VideoFile) {
+  enqueue(baseJob('transcript-cuts', video, undefined))
+}
+
+export function enqueueBurnSubtitles(video: VideoFile) {
+  enqueue(baseJob('burn-subtitles', video, undefined))
+}
+
 export function enqueueRemoveSilence(video: VideoFile) {
   const { silenceThreshold } = useSettingsStore.getState()
   enqueue(baseJob('remove-silence', video, { threshold: silenceThreshold }))
@@ -511,6 +541,26 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
           : withSuffix(job.inputPath, '.timeline'),
       })
     }
+    case 'transcribe': {
+      const transcribe = job.params?.transcribe
+      if (!transcribe) throw new Error('Missing whisper settings')
+      return api.transcribeVideo({
+        videoPath: job.inputPath,
+        pythonPath: transcribe.pythonPath,
+        model: transcribe.model,
+        language: transcribe.language,
+      })
+    }
+    case 'transcript-cuts':
+      return api.applyTranscriptCuts({
+        videoPath: job.inputPath,
+        outputPath: withSuffix(job.inputPath, '.edited'),
+      })
+    case 'burn-subtitles':
+      return api.burnSubtitles({
+        videoPath: job.inputPath,
+        outputPath: withSuffix(job.inputPath, '.karaoke'),
+      })
     case 'export':
       return api.exportVideo({
         videoPath: job.inputPath,

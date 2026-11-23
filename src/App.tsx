@@ -4,6 +4,7 @@ import { Dashboard } from './pages/Dashboard'
 import { Import } from './pages/Import'
 import { RenderQueue } from './pages/RenderQueue'
 import { Settings } from './pages/Settings'
+import { Transcript } from './pages/Transcript'
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -18,6 +19,8 @@ export default function App() {
         return <RenderQueue />
       case 'settings':
         return <Settings />
+      case 'transcript':
+        return <Transcript />
       default:
         return <Dashboard />
     }

@@ -1,7 +1,12 @@
-import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import { app, ipcMain, type IpcMainInvokeEvent } from 'electron'
 import path from 'path'
 import { shell } from 'electron'
-import { FFmpegService, SystemService, LogService } from '../services'
+import {
+  FFmpegService,
+  SystemService,
+  LogService,
+  TranscriptService,
+} from '../services'
 import type {
   VideoImportRequest,
   RemoveSilenceRequest,
@@ -20,6 +25,11 @@ import type {
   ComposeRequest,
   ThumbnailsRequest,
   WaveformRequest,
+  TranscribeRequest,
+  TranscriptData,
+  SubtitleExportRequest,
+  TranscriptCutsRequest,
+  BurnSubtitlesRequest,
   FrameExtractRequest,
   ProcessResult,
 } from '@/types/ipc'
@@ -359,7 +369,117 @@ export function setupFFmpegWorkers() {
   })
 
   // Cancel the currently running job's processes
-  ipcMain.handle('ffmpeg:cancelActive', async () => FFmpegService.cancelActive())
+  ipcMain.handle('ffmpeg:cancelActive', async () => {
+    TranscriptService.cancelActive()
+    return FFmpegService.cancelActive()
+  })
+
+  // ---- Transcript Editor (faster-whisper) ----
+
+  ipcMain.handle(
+    'transcript:transcribe',
+    async (event, request: TranscribeRequest): Promise<ProcessResult> => {
+      try {
+        const scriptPath = path.join(
+          app.getAppPath(),
+          'tools',
+          'transcribe.py'
+        )
+        const outputPath = await TranscriptService.transcribe(
+          request.videoPath,
+          request.pythonPath,
+          scriptPath,
+          request.model,
+          request.language,
+          progressFor(event)
+        )
+        return done(event, outputPath)
+      } catch (error) {
+        return fail(event, error)
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'transcript:load',
+    async (_, request: { videoPath: string }) => {
+      try {
+        const data = await TranscriptService.load(request.videoPath)
+        return { success: true, data }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'transcript:save',
+    async (
+      _,
+      request: { videoPath: string; data: TranscriptData }
+    ) => {
+      try {
+        await TranscriptService.save(request.videoPath, request.data)
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'transcript:exportSubtitles',
+    async (_, request: SubtitleExportRequest) => {
+      try {
+        // Persist the edits first so the sidecar and the exported
+        // subtitles can never disagree.
+        await TranscriptService.save(request.videoPath, request.data)
+        const outputPath = await TranscriptService.exportSubtitles(
+          request.videoPath,
+          request.data,
+          request.format
+        )
+        return { success: true, data: outputPath }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'transcript:applyCuts',
+    async (event, request: TranscriptCutsRequest): Promise<ProcessResult> => {
+      try {
+        await TranscriptService.applyCuts(
+          request.videoPath,
+          request.outputPath,
+          progressFor(event)
+        )
+        return done(event, request.outputPath)
+      } catch (error) {
+        return fail(event, error)
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'transcript:burnSubtitles',
+    async (
+      event,
+      request: BurnSubtitlesRequest
+    ): Promise<ProcessResult> => {
+      try {
+        await TranscriptService.burnSubtitles(
+          request.videoPath,
+          request.outputPath,
+          progressFor(event)
+        )
+        return done(event, request.outputPath)
+      } catch (error) {
+        return fail(event, error)
+      }
+    }
+  )
 
   // System monitor (CPU / RAM / GPU / temperatures)
   ipcMain.handle('system:stats', async () => SystemService.getStats())

@@ -6,6 +6,9 @@ import type { RenderJobKind } from '@/types'
 
 const KIND_LABELS: Record<RenderJobKind, string> = {
   'remove-silence': 'Remove Silence',
+  transcribe: 'Transcribe (faster-whisper)',
+  'transcript-cuts': 'Apply Transcript Cuts',
+  'burn-subtitles': 'Burn Karaoke Subtitles',
   'add-music': 'Add Music',
   'adjust-volume': 'Adjust Volume',
   'get-last-frame': 'Get Last Frame',

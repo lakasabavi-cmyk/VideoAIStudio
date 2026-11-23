@@ -19,6 +19,12 @@ import type {
   WaveformRequest,
   FrameExtractRequest,
   ProcessResult,
+  TranscribeRequest,
+  TranscriptLoadResult,
+  TranscriptData,
+  SubtitleExportRequest,
+  TranscriptCutsRequest,
+  BurnSubtitlesRequest,
 } from './ipc'
 
 export interface ElectronAPI {
@@ -99,6 +105,19 @@ export interface ElectronAPI {
     error?: string
   }>
   getLogTail: () => Promise<{ path: string; text: string }>
+  transcribeVideo: (request: TranscribeRequest) => Promise<ProcessResult>
+  loadTranscript: (request: { videoPath: string }) => Promise<TranscriptLoadResult>
+  saveTranscript: (request: {
+    videoPath: string
+    data: TranscriptData
+  }) => Promise<{ success: boolean; error?: string }>
+  exportSubtitles: (
+    request: SubtitleExportRequest
+  ) => Promise<{ success: boolean; data?: string; error?: string }>
+  applyTranscriptCuts: (
+    request: TranscriptCutsRequest
+  ) => Promise<ProcessResult>
+  burnSubtitles: (request: BurnSubtitlesRequest) => Promise<ProcessResult>
   openLogFile: () => Promise<{ success: boolean }>
   getSystemStats: () => Promise<SystemStats>
   /** Kill the processes of the currently running job. */

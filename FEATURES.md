@@ -365,3 +365,43 @@ from `media:duration` (`getMediaDuration`), because
   Dissolve / Zoom / Slide, 0.5s each. The Remove clip /
   Remove audio buttons and the Transition-in select were
   removed from the Inspector so there is one home for them.
+
+## Transcript Editor — faster-whisper (v0.3.0, 2026-11-24)
+
+- New **Transcript** tab: speech recognition, text-based
+  cutting and dynamic subtitles for the current video.
+- Engine: **faster-whisper** runs as a Python sidecar
+  (`tools/transcribe.py`), spawned like Real-ESRGAN. One-time
+  setup: `tools/setup-whisper.bat` creates
+  `tools/whisper-env` and installs faster-whisper with
+  **av pinned <14** (PyAV 14 removed a decode option
+  faster-whisper passes — transcription fails without the
+  pin). Settings > Transcript holds the python.exe path,
+  the model (default large-v3) and the language (default
+  Vietnamese). The model downloads on first use.
+- The sidecar emits word-level timestamps into a
+  `<media>.transcript.json` sidecar. If the VAD pass finds
+  no speech it **retries automatically without VAD** —
+  the speech-tuned VAD filters out singing over music
+  entirely (verified on a real singing clip: 0 words with
+  VAD, 31 without).
+- Editor: click a word to seek; Shift+click selects a
+  range; Delete marks words cut (struck through); double-
+  click edits a word's subtitle text (audio unchanged).
+  "Tìm từ đệm / nói lắp" marks Vietnamese/English filler
+  syllables and immediate repeats. Edits auto-save to the
+  sidecar; the spoken word highlights and scrolls along
+  during playback.
+- Outputs all follow the **edited timeline** (cut words
+  removed, later words shifted earlier): Export SRT,
+  Export karaoke ASS (one event per word, current word
+  highlighted yellow), **Apply cuts** (`.edited.mp4`,
+  rendered by the shared `renderKeeps` cut engine) and
+  **Burn karaoke** (`.karaoke.mp4`; applies the cuts to a
+  temp render first, then burns the ASS with libass).
+  Word cuts are shrunk 0.02s at both ends so neighbours
+  are not clipped.
+- Verified end to end on this machine: real transcription
+  of a singing clip, SRT remap arithmetic, ASS event
+  count, cut render duration (15.08s − 3.38s cut = 11.70s)
+  and a burned frame showing the yellow word highlight.

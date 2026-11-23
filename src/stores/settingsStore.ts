@@ -38,6 +38,9 @@ export const useSettingsStore = create<SettingsState>()(
       rifeMultiplier: 2,
       rifePath: '',
       rifeModelPath: '',
+      whisperPythonPath: '',
+      whisperModel: 'large-v3',
+      whisperLanguage: 'vi',
       updateSettings: (partial) => set(partial),
     }),
     {
@@ -64,6 +67,9 @@ export const useSettingsStore = create<SettingsState>()(
         rifeMultiplier,
         rifePath,
         rifeModelPath,
+        whisperPythonPath,
+        whisperModel,
+        whisperLanguage,
       }) => ({
         removeSilence,
         silenceThreshold,
@@ -86,6 +92,9 @@ export const useSettingsStore = create<SettingsState>()(
         rifeMultiplier,
         rifePath,
         rifeModelPath,
+        whisperPythonPath,
+        whisperModel,
+        whisperLanguage,
       }),
     }
   )

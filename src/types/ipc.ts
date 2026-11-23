@@ -212,3 +212,63 @@ export interface ThumbnailsRequest {
   endSeconds: number
   count: number
 }
+
+/** One word of a transcript, timed on the ORIGINAL media. */
+export interface TranscriptWord {
+  start: number
+  end: number
+  /** The word as recognized (trimmed, no leading space). */
+  word: string
+  probability?: number
+  /** Marked for removal: cutting the video removes this word. */
+  cut?: boolean
+  /** User-corrected display text (subtitles only; audio unchanged). */
+  text?: string
+}
+
+export interface TranscriptSegment {
+  start: number
+  end: number
+  words: TranscriptWord[]
+}
+
+/** The `<media>.transcript.json` sidecar written by faster-whisper. */
+export interface TranscriptData {
+  version: 1
+  mediaPath: string
+  language: string
+  duration: number
+  model?: string
+  segments: TranscriptSegment[]
+}
+
+export interface TranscribeRequest {
+  videoPath: string
+  /** python.exe of the environment created by tools/setup-whisper.bat. */
+  pythonPath: string
+  model: string
+  /** 'vi', 'en', ... or 'auto' to detect. */
+  language: string
+}
+
+export interface TranscriptLoadResult {
+  success: boolean
+  data?: TranscriptData | null
+  error?: string
+}
+
+export interface SubtitleExportRequest {
+  videoPath: string
+  data: TranscriptData
+  format: 'srt' | 'ass'
+}
+
+export interface TranscriptCutsRequest {
+  videoPath: string
+  outputPath: string
+}
+
+export interface BurnSubtitlesRequest {
+  videoPath: string
+  outputPath: string
+}

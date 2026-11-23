@@ -339,6 +339,127 @@ export class FFmpegService {
   }
 
   /**
+   * Render only the given keep ranges of a video, concatenated
+   * back to back. This is the shared cut engine behind Remove
+   * Silence and the Transcript Editor's word cuts.
+   */
+  static async renderKeeps(
+    inputPath: string,
+    outputPath: string,
+    keeps: { start: number; end: number }[],
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    const metadata = await FFmpegService.getVideoMetadata(inputPath)
+    const hasAudio = Boolean(metadata.audioCodec)
+    const cleanKeeps = keeps.filter((k) => k.end - k.start > 0.05)
+    if (cleanKeeps.length === 0) {
+      throw new Error('Nothing to keep — every range was cut')
+    }
+
+    const filters: string[] = []
+    const concatInputs: string[] = []
+    cleanKeeps.forEach((segment, i) => {
+      const start = segment.start.toFixed(3)
+      const end = segment.end.toFixed(3)
+      filters.push(
+        `[0:v]trim=start=${start}:end=${end},setpts=PTS-STARTPTS[v${i}]`
+      )
+      if (hasAudio) {
+        filters.push(
+          `[0:a]atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS[a${i}]`
+        )
+        concatInputs.push(`[v${i}][a${i}]`)
+      } else {
+        concatInputs.push(`[v${i}]`)
+      }
+    })
+    filters.push(
+      `${concatInputs.join('')}concat=n=${cleanKeeps.length}:v=1:a=${
+        hasAudio ? 1 : 0
+      }[outv]${hasAudio ? '[outa]' : ''}`
+    )
+
+    const keptDuration = cleanKeeps.reduce(
+      (sum, k) => sum + (k.end - k.start),
+      0
+    )
+
+    return new Promise((resolve, reject) => {
+      const command = FFmpegService.trackCommand(ffmpeg(inputPath))
+        .complexFilter(filters)
+        .map('[outv]')
+      if (hasAudio) command.map('[outa]')
+      command
+        .outputOptions(['-c:v', 'libx264', '-c:a', 'aac'])
+        .output(outputPath)
+        .on('progress', (progress) => {
+          if (progress.timemark && keptDuration > 0) {
+            const parts = progress.timemark.split(':')
+            const seconds =
+              parseInt(parts[0], 10) * 3600 +
+              parseInt(parts[1], 10) * 60 +
+              parseFloat(parts[2])
+            const percent = Math.round((seconds / keptDuration) * 100)
+            if (Number.isFinite(percent)) {
+              onProgress?.(Math.min(100, percent))
+            }
+          }
+        })
+        .on('end', () => {
+          onProgress?.(100)
+          resolve()
+        })
+        .on('error', reject)
+        .run()
+    })
+  }
+
+  /**
+   * Burn an ASS subtitle file into the video with libass.
+   * The filter argument needs the path escaped for ffmpeg's
+   * filter parser: forward slashes, escaped drive colon, and
+   * the whole path single-quoted.
+   */
+  static async burnAss(
+    inputPath: string,
+    outputPath: string,
+    assPath: string,
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    const metadata = await FFmpegService.getVideoMetadata(inputPath)
+    const duration = metadata.duration || 0
+    const escaped = assPath
+      .replace(/\\/g, '/')
+      .replace(/:/g, '\\:')
+      .replace(/'/g, "'\\''")
+    return new Promise((resolve, reject) => {
+      FFmpegService.trackCommand(ffmpeg(inputPath))
+        .videoFilters(`ass='${escaped}'`)
+        .outputOptions(['-c:v', 'libx264', '-c:a', 'aac'])
+        .output(outputPath)
+        .on('progress', (progress) => {
+          if (progress.timemark && duration > 0) {
+            const parts = progress.timemark.split(':')
+            const seconds =
+              parseInt(parts[0], 10) * 3600 +
+              parseInt(parts[1], 10) * 60 +
+              parseFloat(parts[2])
+            const percent = Math.round((seconds / duration) * 100)
+            if (Number.isFinite(percent)) {
+              onProgress?.(Math.min(100, percent))
+            }
+          }
+        })
+        .on('end', () => {
+          onProgress?.(100)
+          resolve()
+        })
+        .on('error', reject)
+        .run()
+    })
+  }
+
+  /**
    * Add background music to video.
    * The music is looped so it covers the whole video, and amix runs
    * with normalize=0 so the original audio keeps its level.
