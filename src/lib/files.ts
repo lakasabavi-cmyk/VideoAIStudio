@@ -17,14 +17,18 @@ export function withSuffix(filePath: string, suffix: string): string {
 }
 
 /**
- * Convert a local filesystem path into a file:// URL that a
- * Chromium <video> element can actually load. A raw path like
+ * Convert a local filesystem path into a media:// URL for the
+ * <video> element. A raw path is not a URL at all, and a file://
+ * URL is refused when the page itself is served from
+ * http://localhost in dev ("Not allowed to load local resource").
+ * The media:// scheme is served by the main process with HTTP
+ * Range support - see electron/main/mediaProtocol.ts. A raw path like
  * "C:\v\clip.mp4" is not a URL and fails both in dev (page served
  * from http://localhost) and in production.
  */
 export function toFileUrl(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/')
-  const prefix = normalized.startsWith('/') ? 'file://' : 'file:///'
+  const prefix = normalized.startsWith('/') ? 'media://' : 'media:///'
   const encoded = normalized
     .split('/')
     .map((segment, i) =>

@@ -7,6 +7,10 @@ import {
   type MenuItemConstructorOptions,
 } from 'electron'
 import { isDev } from './utils'
+import {
+  registerMediaSchemePrivileges,
+  registerMediaProtocol,
+} from './mediaProtocol'
 import { setupFFmpegWorkers } from '../../backend/workers/ffmpeg.worker'
 import path from 'path'
 // (no fileURLToPath shim: the main bundle is CommonJS — see
@@ -56,7 +60,14 @@ function createWindow() {
   })
 }
 
-app.on('ready', createWindow)
+// Privileges for the media:// scheme must be registered before
+// the app is ready; the handler itself is registered on ready.
+registerMediaSchemePrivileges()
+
+app.on('ready', () => {
+  registerMediaProtocol()
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
