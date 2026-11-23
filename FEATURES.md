@@ -126,6 +126,14 @@ for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
   Windows cannot reliably suspend these external tools, so
   cancel-and-restart replaces it.
 
+## Real-ESRGAN tile size — memory control (added 2026-11-23)
+
+- Settings → Upscale (Real-ESRGAN) → Tile size: Auto / 400 /
+  256 / 128. Passed to the ncnn binary as -t. Auto leaves the
+  binary free to hold a whole large frame in VRAM; on an 8GB
+  card a chained 2x-then-4x upscale died out-of-memory at 73%.
+  256 (or 128) caps per-tile memory at a small speed cost.
+
 ## Edit Tools — Trim, Split, Crop, Speed, Rotate/Flip, Thumbnails (added 2026-11-23)
 
 - A panel under the Current Video on the Dashboard; every action

@@ -17,6 +17,7 @@ export const Settings: FC = () => {
     upscaleMethod: stored.upscaleMethod,
     lanczosTarget: stored.lanczosTarget,
     esrganScale: stored.esrganScale,
+    esrganTileSize: stored.esrganTileSize,
     esrganPath: stored.esrganPath,
     esrganModelsPath: stored.esrganModelsPath,
     rifeEnabled: stored.rifeEnabled,
@@ -322,6 +323,42 @@ export const Settings: FC = () => {
                 <p className="text-xs text-gray-500 mt-2">
                   2x and 3x use realesr-animevideov3 (video model), 4x uses
                   realesrgan-x4plus. Saved as name_2x.mp4 / name_4x.mp4.
+                </p>
+              </div>
+              <div>
+                <label className="text-gray-300 text-sm">
+                  Tile size (memory control)
+                </label>
+                <div className="flex gap-2 mt-2">
+                  {(
+                    [
+                      { value: 0, label: 'Auto' },
+                      { value: 400, label: '400' },
+                      { value: 256, label: '256' },
+                      { value: 128, label: '128' },
+                    ] as const
+                  ).map((option) => (
+                    <button
+                      key={option.value}
+                      onClick={() =>
+                        setDraft({ ...draft, esrganTileSize: option.value })
+                      }
+                      className={
+                        'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
+                        (draft.esrganTileSize === option.value
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
+                      }
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Auto lets the tool use as much VRAM as it wants per tile.
+                  If an upscale dies with out-of-memory on large frames,
+                  pick 256 (or 128) — smaller tiles use much less memory,
+                  at a small speed cost.
                 </p>
               </div>
               <div>

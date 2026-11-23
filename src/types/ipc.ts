@@ -56,6 +56,8 @@ export interface UpscaleRequest {
   model?: string
   exePath?: string
   modelsPath?: string
+  /** Tile size in px for the ncnn binary (0/undefined = auto). */
+  tileSize?: number
   /** Optional RIFE interpolation stage (runs before the upscale). */
   rife?: { exePath: string; modelPath: string; multiplier: number }
 }

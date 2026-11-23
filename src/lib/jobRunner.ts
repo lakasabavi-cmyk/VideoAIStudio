@@ -127,6 +127,7 @@ export function enqueueUpscale(video: VideoFile): string | null {
           model: ESRGAN_MODELS[settings.esrganScale],
           exePath: settings.esrganPath,
           modelsPath: settings.esrganModelsPath,
+          tileSize: settings.esrganTileSize,
           rife,
           outputSuffix:
             `_${settings.esrganScale}x` +
@@ -255,6 +256,7 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
         model: upscale.model,
         exePath: upscale.exePath,
         modelsPath: upscale.modelsPath,
+        tileSize: upscale.tileSize,
         rife: upscale.rife,
       })
     }

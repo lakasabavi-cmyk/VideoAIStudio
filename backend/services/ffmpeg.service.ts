@@ -828,6 +828,12 @@ export class FFmpegService {
           '-m', modelsPath,
           '-n', model,
           '-f', 'png',
+          // Tile cap: without it the binary may try to hold a whole
+          // large frame (plus the scaled result) in VRAM at once and
+          // die out-of-memory near the end of a long upscale.
+          ...(request.tileSize && request.tileSize > 0
+            ? ['-t', String(request.tileSize)]
+            : []),
         ],
         outputDir: upscaledDir,
         expectedFrames: finalFrameCount,

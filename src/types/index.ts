@@ -37,6 +37,9 @@ export interface ProjectSettings {
   lanczosTarget: '1080p' | '2k' | '4k' | '8k'
   /** Real-ESRGAN scale factor; the model follows from it. */
   esrganScale: 2 | 3 | 4
+  /** Real-ESRGAN tile size in px (0 = auto). Lower it (e.g. 256)
+   * when a job dies with out-of-memory on large frames. */
+  esrganTileSize: number
   /** Path to the realesrgan-ncnn-vulkan executable. */
   esrganPath: string
   /** Folder with the Real-ESRGAN model files (blank = "models" next to the executable). */
@@ -84,6 +87,7 @@ export interface RenderJobParams {
     exePath?: string
     modelsPath?: string
     rife?: { exePath: string; modelPath: string; multiplier: number }
+    tileSize?: number
     outputSuffix: string
   }
   format?: 'mp4' | 'webm' | 'mov'
