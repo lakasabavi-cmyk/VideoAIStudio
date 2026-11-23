@@ -203,12 +203,16 @@ Editor surface:
   own loudest peak when drawn (raw amplitudes of real
   recordings are nearly invisible); a decode that produces no
   samples is logged in the App Log and never cached, and an
-  all-zero cache entry is ignored and re-decoded. On the draw
-  side, peaks are kept in a ref and redrawn on resize (a draw
-  that landed before the block was laid out used to be lost
-  for the whole session), and an all-zero peaks answer is
-  treated as a failed decode and retried once — only a second
-  all-zero answer is drawn as real silence.
+  all-zero cache entry is ignored and re-decoded, and every
+  real decode (cache miss) is logged with its bucket count,
+  sample count and max peak, so a flat waveform can be traced
+  from the App Log. On the draw side the bars are plain DOM
+  elements, not a canvas — in GPU safe mode (hardware
+  acceleration off) canvas painting proved unreliable on the
+  target machine while the decode side verified healthy —
+  and an all-zero peaks answer is treated as a failed decode
+  and retried once; only a second all-zero answer is drawn
+  as real silence.
 - Ruler + red playhead; the editor has its own preview player —
   playback walks the clips, switching sources at clip boundaries,
   and the ruler seeks. Zoom goes to 600 px/s (frame level).

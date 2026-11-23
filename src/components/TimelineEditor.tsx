@@ -148,55 +148,24 @@ const Filmstrip: FC<{ clip: TimelineVideoClip }> = ({ clip }) => {
   )
 }
 
-/** Real audio waveform across the clip's kept range. */
+/** Real audio waveform across the clip's kept range. Rendered
+ * as plain DOM bars, not a canvas: in the GPU safe mode this
+ * app falls back to (hardware acceleration off), canvas
+ * painting proved unreliable on the target machine while the
+ * decode side was verified healthy — DOM bars go through the
+ * normal layout/paint path and cannot get lost that way. */
 const Waveform: FC<{ clip: TimelineAudioClip; color: string }> = ({
   clip,
   color,
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const peaksRef = useRef<number[] | null>(null)
+  const [peaks, setPeaks] = useState<number[] | null>(null)
   const kept = keptAudio(clip)
   const buckets = Math.max(16, Math.min(240, Math.round(kept * 12)))
   const key = `${clip.path}|${clip.trimStart.toFixed(1)}|${clip.trimEnd.toFixed(1)}|${buckets}`
   useEffect(() => {
     let alive = true
     let retryTimer: ReturnType<typeof setTimeout> | undefined
-    peaksRef.current = null
-    const draw = () => {
-      const peaks = peaksRef.current
-      const canvas = canvasRef.current
-      if (!peaks || !canvas) return
-      const w = canvas.clientWidth
-      const h = canvas.clientHeight
-      // Zero size means the block is not laid out yet — the
-      // ResizeObserver below redraws when it gets its size.
-      if (w === 0 || h === 0) return
-      canvas.width = w
-      canvas.height = h
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-      ctx.clearRect(0, 0, w, h)
-      ctx.fillStyle = color
-      // Normalize to the clip's own loudest peak and lift the
-      // quiet parts (power curve): real recordings rarely peak
-      // near 1.0, and raw amplitudes draw as a flat line.
-      const max = Math.max(...peaks)
-      const barW = w / peaks.length
-      peaks.forEach((p, i) => {
-        const norm = max > 0.001 ? Math.pow(p / max, 0.6) : 0
-        const bh = Math.max(1, norm * (h - 4))
-        ctx.fillRect(i * barW, (h - bh) / 2, Math.max(1, barW - 0.5), bh)
-      })
-    }
-    // Redraw whenever the block is resized (first layout, zoom
-    // changes): a draw that lands before layout used to be
-    // lost for the whole session, leaving the block flat.
-    const canvas = canvasRef.current
-    const observer =
-      canvas && typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(() => draw())
-        : null
-    if (canvas && observer) observer.observe(canvas)
+    setPeaks(null)
     const fetchPeaks = async (isRetry: boolean) => {
       try {
         const result = await window.electronAPI.extractWaveformPeaks({
@@ -209,20 +178,18 @@ const Waveform: FC<{ clip: TimelineAudioClip; color: string }> = ({
         // All-zero peaks with a success flag mean the decode
         // produced nothing (the service returns zeros when it
         // cannot decode) — treat it like a failure and retry
-        // once instead of drawing flat for the whole session.
+        // once instead of staying flat for the whole session.
         const usable =
           result.success &&
           result.data &&
           result.data.some((p) => p > 0)
         if (usable) {
-          peaksRef.current = result.data ?? null
-          draw()
+          setPeaks(result.data ?? null)
         } else if (!isRetry) {
           retryTimer = setTimeout(() => void fetchPeaks(true), 1500)
         } else if (result.success && result.data) {
           // Second all-zero answer: the range really is silent.
-          peaksRef.current = result.data
-          draw()
+          setPeaks(result.data)
         }
       } catch {
         if (alive && !isRetry) {
@@ -233,13 +200,33 @@ const Waveform: FC<{ clip: TimelineAudioClip; color: string }> = ({
     const timer = setTimeout(() => void fetchPeaks(false), 300)
     return () => {
       alive = false
-      observer?.disconnect()
       clearTimeout(timer)
       if (retryTimer) clearTimeout(retryTimer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
-  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+  if (!peaks) return null
+  // Normalize to the clip's own loudest peak and lift the quiet
+  // parts (power curve): real recordings rarely peak near 1.0,
+  // and raw amplitudes draw as a flat line.
+  const max = Math.max(...peaks)
+  return (
+    <div className="absolute inset-0 flex items-center gap-[1px] px-[2px] pointer-events-none">
+      {peaks.map((p, i) => {
+        const norm = max > 0.001 ? Math.pow(p / max, 0.6) : 0
+        return (
+          <div
+            key={i}
+            className="flex-1 min-w-[1px] rounded-[1px]"
+            style={{
+              height: `${Math.max(4, norm * 100)}%`,
+              backgroundColor: color,
+            }}
+          />
+        )
+      })}
+    </div>
+  )
 }
 
 interface DragState {

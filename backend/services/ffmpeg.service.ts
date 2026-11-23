@@ -1018,6 +1018,15 @@ export class FFmpegService {
     } catch {
       // cache is best-effort
     }
+    // One line per real decode (cache hits stay silent) so a
+    // flat waveform can be diagnosed from the App Log: if this
+    // line exists with max > 0, the peaks reached the renderer
+    // and the problem is on the draw side.
+    LogService.log(
+      'waveform',
+      `decoded ${mediaPath} [${startSeconds.toFixed(1)}-${endSeconds.toFixed(1)}s] ` +
+        `buckets=${count} samples=${samples} max=${Math.max(...peaks).toFixed(3)}`
+    )
     return peaks
   }
 
