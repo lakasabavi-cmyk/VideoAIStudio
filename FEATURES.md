@@ -376,7 +376,13 @@ from `media:duration` (`getMediaDuration`), because
   `tools/whisper-env` and installs faster-whisper with
   **av pinned <14** (PyAV 14 removed a decode option
   faster-whisper passes — transcription fails without the
-  pin). Settings > Transcript holds the python.exe path,
+  pin; re-verified against av 19). The bat requires
+  **Python 3.12 or 3.13 (64-bit)** and picks it via the py
+  launcher automatically: PyAV <14 has no wheel for Python
+  3.14+, so on 3.14 pip tries to compile av and dies with
+  a Visual C++ Build Tools error (hit on Hung's machine
+  2026-11-24, fixed in v0.3.1 — the bat installs with
+  --only-binary and recreates a wrong-Python venv). Settings > Transcript holds the python.exe path,
   the model (default large-v3) and the language (default
   Vietnamese). The model downloads on first use.
 - The sidecar emits word-level timestamps into a
