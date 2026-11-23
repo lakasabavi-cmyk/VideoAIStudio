@@ -1,6 +1,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import path from 'path'
-import { FFmpegService, SystemService } from '../services'
+import { shell } from 'electron'
+import { FFmpegService, SystemService, LogService } from '../services'
 import type {
   VideoImportRequest,
   RemoveSilenceRequest,
@@ -35,6 +36,7 @@ function progressFor(event: IpcMainInvokeEvent) {
 
 function fail(event: IpcMainInvokeEvent, error: unknown): ProcessResult {
   const message = (error as Error).message
+  LogService.log('job', `FAILED: ${message}`)
   if (!event.sender.isDestroyed()) {
     event.sender.send('render:error', message)
   }
@@ -42,6 +44,7 @@ function fail(event: IpcMainInvokeEvent, error: unknown): ProcessResult {
 }
 
 function done(event: IpcMainInvokeEvent, outputPath: string): ProcessResult {
+  LogService.log('job', `done -> ${outputPath}`)
   if (!event.sender.isDestroyed()) {
     event.sender.send('render:complete')
   }
@@ -261,6 +264,17 @@ export function setupFFmpegWorkers() {
     } catch (error) {
       return fail(event, error)
     }
+  })
+
+  // App log: tail for the in-app viewer, and open the file itself
+  ipcMain.handle('log:getTail', async () => ({
+    path: LogService.getFilePath(),
+    text: LogService.readTail(300),
+  }))
+
+  ipcMain.handle('log:openFile', async () => {
+    await shell.openPath(LogService.getFilePath())
+    return { success: true }
   })
 
   // Cancel the currently running job's processes

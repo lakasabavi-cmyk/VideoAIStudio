@@ -60,6 +60,8 @@ export interface ElectronAPI {
   changeSpeed: (request: SpeedRequest) => Promise<ProcessResult>
   transformVideo: (request: TransformRequest) => Promise<ProcessResult>
   timelineThumbnails: (request: TimelineThumbsRequest) => Promise<ProcessResult>
+  getLogTail: () => Promise<{ path: string; text: string }>
+  openLogFile: () => Promise<{ success: boolean }>
   getSystemStats: () => Promise<SystemStats>
   /** Kill the processes of the currently running job. */
   cancelActiveProcessing: () => Promise<number>

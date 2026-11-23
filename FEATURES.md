@@ -126,6 +126,23 @@ for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
   Windows cannot reliably suspend these external tools, so
   cancel-and-restart replaces it.
 
+## App Log viewer (added 2026-11-23)
+
+- The main process keeps an append-only log on disk
+  (userData/logs/videoai-YYYY-MM-DD.log), written with
+  synchronous appends so it survives even a full machine
+  shutdown — a chained 2x-then-4x upscale shut Hung's whole PC
+  down at 73% and the in-app error line died with it.
+- Logged: app start, every job's completion/failure, frame
+  tool failures with their stderr tail, upscale start (input,
+  size, scale, model, tile, RIFE), stage transitions, and a
+  system-stats sample every 10s during upscale jobs (CPU, RAM,
+  GPU util, VRAM, GPU temp) so the load right before a death
+  is on record.
+- Settings page → App Log (under System Monitor): shows the
+  last 300 lines, auto-refreshes every 5s, with Refresh and
+  Open Log File buttons.
+
 ## Real-ESRGAN tile size — memory control (added 2026-11-23)
 
 - Settings → Upscale (Real-ESRGAN) → Tile size: Auto / 400 /

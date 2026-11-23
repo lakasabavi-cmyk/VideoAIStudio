@@ -62,6 +62,9 @@ export const preload = {
   timelineThumbnails: (request: TimelineThumbsRequest) =>
     ipcRenderer.invoke('ffmpeg:timelineThumbs', request),
 
+  getLogTail: () => ipcRenderer.invoke('log:getTail'),
+  openLogFile: () => ipcRenderer.invoke('log:openFile'),
+
   getSystemStats: () => ipcRenderer.invoke('system:stats'),
   cancelActiveProcessing: () => ipcRenderer.invoke('ffmpeg:cancelActive'),
 

@@ -2,6 +2,7 @@ import { FC, useState } from 'react'
 import { Save, Check } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { SystemMonitor } from '@/components/SystemMonitor'
+import { LogViewer } from '@/components/LogViewer'
 import type { ProjectSettings } from '@/types'
 
 export const Settings: FC = () => {
@@ -404,6 +405,8 @@ export const Settings: FC = () => {
         </button>
 
         <SystemMonitor />
+
+        <LogViewer />
       </div>
     </div>
   )

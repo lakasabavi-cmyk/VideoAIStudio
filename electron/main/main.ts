@@ -12,6 +12,7 @@ import {
   registerMediaProtocol,
 } from './mediaProtocol'
 import { setupFFmpegWorkers } from '../../backend/workers/ffmpeg.worker'
+import { LogService } from '../../backend/services/log.service'
 import path from 'path'
 // (no fileURLToPath shim: the main bundle is CommonJS — see
 // build:electron in package.json — so __dirname is available
@@ -65,6 +66,10 @@ function createWindow() {
 registerMediaSchemePrivileges()
 
 app.on('ready', () => {
+  LogService.log(
+    'app',
+    `VideoAI Studio started (platform ${process.platform}, node ${process.versions.node})`
+  )
   registerMediaProtocol()
   createWindow()
 })

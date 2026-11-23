@@ -6,6 +6,8 @@ import os from 'os'
 import path from 'path'
 import { spawn } from 'child_process'
 import type { UpscaleRequest } from '@/types/ipc'
+import { LogService } from './log.service'
+import { SystemService } from './system.service'
 
 /**
  * Resolve a bundled binary path.
@@ -662,6 +664,10 @@ export class FFmpegService {
         if (code === 0) {
           resolve()
         } else {
+          LogService.log(
+            'tool',
+            `${toolName} exited with code ${code}. ${stderrTail.trim()}`
+          )
           reject(
             new Error(
               `${toolName} exited with code ${code}. ${stderrTail.trim()}`
@@ -755,6 +761,32 @@ export class FFmpegService {
     const fps = metadata.fps > 0 ? metadata.fps : 30
     const totalFrames = Math.max(1, Math.round(metadata.duration * fps))
 
+    // Log the run and sample system stats while the heavy stages
+    // run. If the machine dies mid-job (power/thermal/driver), the
+    // last lines of the log show the load right before the death.
+    LogService.log(
+      'upscale',
+      `start input=${path.basename(request.videoPath)} ` +
+        `${metadata.width}x${metadata.height} ${metadata.duration.toFixed(1)}s ` +
+        `scale=${scale} model=${model} tile=${request.tileSize ?? 0} ` +
+        `rife=${rife ? `${rifeMultiplier}x` : 'off'}`
+    )
+    const statsSampler = setInterval(async () => {
+      try {
+        const s = await SystemService.getStats()
+        LogService.log(
+          'stats',
+          `cpu=${s.cpuPercent}% ram=${s.ramUsedGB.toFixed(1)}/${s.ramTotalGB.toFixed(1)}GB ` +
+            (s.gpu
+              ? `gpu=${s.gpu.utilPercent}% vram=${s.gpu.vramUsedMB}/${s.gpu.vramTotalMB}MB temp=${s.gpu.tempC}C`
+              : 'gpu=n/a') +
+            (s.cpuTempC !== undefined ? ` cpuTemp=${s.cpuTempC}C` : '')
+        )
+      } catch {
+        // Sampling must never break the job.
+      }
+    }, 10000)
+
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'videoai-esrgan-'))
     const framesDir = path.join(tmpDir, 'frames')
     const rifeDir = path.join(tmpDir, 'rife')
@@ -789,6 +821,11 @@ export class FFmpegService {
 
       FFmpegService.throwIfCancelled(cancelEpoch)
 
+      LogService.log(
+        'upscale',
+        `extract done: ${totalFrames} frames ${metadata.width}x${metadata.height}`
+      )
+
       // Stage 2 (optional): RIFE interpolation at native size.
       let esrganInputDir = framesDir
       let finalFrameCount = frameCount
@@ -817,6 +854,11 @@ export class FFmpegService {
       }
 
       FFmpegService.throwIfCancelled(cancelEpoch)
+
+      LogService.log(
+        'upscale',
+        `esrgan start: ${finalFrameCount} frames, tile=${request.tileSize ?? 0}`
+      )
 
       // Stage 3: Real-ESRGAN upscale of every frame.
       await FFmpegService.runFrameTool({
@@ -899,7 +941,9 @@ export class FFmpegService {
           .run()
       })
       onProgress?.(100, 'Rebuild Video')
+      LogService.log('upscale', `done -> ${request.outputPath}`)
     } finally {
+      clearInterval(statsSampler)
       fs.rmSync(tmpDir, { recursive: true, force: true })
     }
   }
