@@ -4,12 +4,12 @@ import { useRenderQueue } from '@/stores/renderQueue'
 import { VideoPreview } from '@/components/VideoPreview'
 import {
   enqueueRemoveSilence,
-  enqueueRemoveMusic,
+  enqueueAdjustVolume,
   enqueueAddMusic,
   enqueueExport,
 } from '@/lib/jobRunner'
 import type { VideoFile } from '@/types'
-import { Trash2, VolumeX, Mic, Music, Download } from 'lucide-react'
+import { Trash2, VolumeX, Volume2, Music, Download } from 'lucide-react'
 
 export const Dashboard: FC = () => {
   const { videos, currentVideo, removeVideo } = useVideoStore()
@@ -39,15 +39,15 @@ export const Dashboard: FC = () => {
       </button>
       <button
         onClick={() => {
-          enqueueRemoveMusic(video)
+          enqueueAdjustVolume(video)
           setActionMessage(
-            `Remove Music job queued for ${video.name} — see Render Queue.`
+            `Adjust Volume job queued for ${video.name} — see Render Queue.`
           )
         }}
         className="flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-indigo-600 text-gray-200 text-sm rounded-lg transition-colors"
-        title="Remove original background music, keep dialogue"
+        title="Render a copy with the original audio at the volume set in Settings (0% = muted)"
       >
-        <Mic size={16} /> Remove Music
+        <Volume2 size={16} /> Adjust Volume
       </button>
       <button
         onClick={() => handleAddMusic(video)}

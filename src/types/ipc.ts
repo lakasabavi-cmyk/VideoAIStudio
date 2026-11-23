@@ -28,10 +28,10 @@ export interface RemoveSilenceRequest {
   outputPath?: string
 }
 
-export interface RemoveMusicRequest {
+export interface AdjustVolumeRequest {
   videoPath: string
-  /** 0-1; higher removes more music and pushes dialogue further forward. */
-  strength?: number
+  /** Volume of the original audio track, 0-1 (0 = fully muted). */
+  volume: number
   outputPath?: string
 }
 
@@ -39,6 +39,8 @@ export interface AddMusicRequest {
   videoPath: string
   musicPath: string
   musicVolume: number
+  /** Volume of the original track in the mix, 0-1 (0 = muted). */
+  originalVolume?: number
   outputPath: string
 }
 

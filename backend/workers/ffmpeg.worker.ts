@@ -4,7 +4,7 @@ import { FFmpegService } from '../services'
 import type {
   VideoImportRequest,
   RemoveSilenceRequest,
-  RemoveMusicRequest,
+  AdjustVolumeRequest,
   AddMusicRequest,
   ExportRequest,
   ProcessResult,
@@ -93,19 +93,19 @@ export function setupFFmpegWorkers() {
     }
   )
 
-  // Remove background music (keep dialogue)
+  // Adjust the original track's volume (0 = mute)
   ipcMain.handle(
-    'ffmpeg:removeMusic',
-    async (event, request: RemoveMusicRequest): Promise<ProcessResult> => {
+    'ffmpeg:adjustVolume',
+    async (event, request: AdjustVolumeRequest): Promise<ProcessResult> => {
       try {
         const parsed = path.parse(request.videoPath)
         const outputPath =
           request.outputPath ??
-          path.join(parsed.dir, `${parsed.name}.nomusic.mp4`)
-        await FFmpegService.removeBackgroundMusic(
+          path.join(parsed.dir, `${parsed.name}.vol.mp4`)
+        await FFmpegService.adjustVolume(
           request.videoPath,
           outputPath,
-          request.strength,
+          request.volume,
           progressFor(event)
         )
         return done(event, outputPath)
@@ -125,6 +125,7 @@ export function setupFFmpegWorkers() {
           request.musicPath,
           request.outputPath,
           request.musicVolume,
+          request.originalVolume ?? 1,
           progressFor(event)
         )
         return done(event, request.outputPath)

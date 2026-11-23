@@ -10,7 +10,7 @@ export const Settings: FC = () => {
     silenceThreshold: stored.silenceThreshold,
     backgroundMusic: stored.backgroundMusic,
     musicVolume: stored.musicVolume,
-    musicRemovalStrength: stored.musicRemovalStrength,
+    originalVolume: stored.originalVolume,
     exportFormat: stored.exportFormat,
     exportQuality: stored.exportQuality,
   })
@@ -97,24 +97,26 @@ export const Settings: FC = () => {
             </div>
             <div>
               <label className="text-gray-300 text-sm">
-                Music Removal Strength: {draft.musicRemovalStrength}%
+                Original Volume: {draft.originalVolume}%
               </label>
               <input
                 type="range"
                 min="0"
                 max="100"
-                value={draft.musicRemovalStrength}
+                value={draft.originalVolume}
                 onChange={(e) =>
                   setDraft({
                     ...draft,
-                    musicRemovalStrength: parseInt(e.target.value, 10),
+                    originalVolume: parseInt(e.target.value, 10),
                   })
                 }
                 className="w-full mt-2"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Used by Remove Music: higher pushes dialogue further
-                forward and turns the original music further down.
+                Volume of the video's own audio track. Used by the
+                Adjust Volume job and by Add Music mixes — set it to
+                0% to mute the original audio completely before
+                adding new music.
               </p>
             </div>
           </div>

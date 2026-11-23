@@ -62,12 +62,12 @@ export function enqueueRemoveSilence(video: VideoFile) {
   enqueue(baseJob('remove-silence', video, { threshold: silenceThreshold }))
 }
 
-export function enqueueRemoveMusic(video: VideoFile) {
-  const { musicRemovalStrength } = useSettingsStore.getState()
+export function enqueueAdjustVolume(video: VideoFile) {
+  const { originalVolume } = useSettingsStore.getState()
   enqueue(
-    baseJob('remove-music', video, {
-      // Settings store strength as 0-100 percent; the service wants 0-1.
-      strength: musicRemovalStrength / 100,
+    baseJob('adjust-volume', video, {
+      // Settings store volume as 0-100 percent; the service wants 0-1.
+      volume: originalVolume / 100,
     })
   )
 }
@@ -81,15 +81,17 @@ export function enqueueExport(video: VideoFile) {
 
 /** Returns an error message instead of enqueueing when setup is missing. */
 export function enqueueAddMusic(video: VideoFile): string | null {
-  const { backgroundMusic, musicVolume } = useSettingsStore.getState()
+  const { backgroundMusic, musicVolume, originalVolume } =
+    useSettingsStore.getState()
   if (!backgroundMusic) {
     return 'No background music selected. Pick a music file in Settings first.'
   }
   enqueue(
     baseJob('add-music', video, {
       musicPath: backgroundMusic,
-      // Settings store volume as 0-100 percent; ffmpeg wants 0-1.
+      // Settings store volumes as 0-100 percent; ffmpeg wants 0-1.
       musicVolume: musicVolume / 100,
+      originalVolume: originalVolume / 100,
     })
   )
   return null
@@ -104,11 +106,11 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
         outputPath: withSuffix(job.inputPath, '.nosil'),
         threshold: job.params?.threshold,
       })
-    case 'remove-music':
-      return api.removeMusic({
+    case 'adjust-volume':
+      return api.adjustVolume({
         videoPath: job.inputPath,
-        outputPath: withSuffix(job.inputPath, '.nomusic'),
-        strength: job.params?.strength,
+        outputPath: withSuffix(job.inputPath, '.vol'),
+        volume: job.params?.volume ?? 1,
       })
     case 'add-music':
       return api.addMusic({
@@ -116,6 +118,7 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
         musicPath: job.params?.musicPath ?? '',
         outputPath: withSuffix(job.inputPath, '.music'),
         musicVolume: job.params?.musicVolume ?? 0.5,
+        originalVolume: job.params?.originalVolume,
       })
     case 'export':
       return api.exportVideo({

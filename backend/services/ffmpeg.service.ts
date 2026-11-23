@@ -252,6 +252,7 @@ export class FFmpegService {
     audioPath: string,
     outputPath: string,
     audioVolume: number = 0.5,
+    originalVolume: number = 1,
     onProgress?: (progress: number) => void
   ): Promise<void> {
     const metadata = await FFmpegService.getVideoMetadata(videoPath)
@@ -268,10 +269,12 @@ export class FFmpegService {
       // '-map [0:v]', which ffmpeg rejects because 0:v is a raw input
       // stream, not a filter output.
       if (metadata.audioCodec) {
+        const originalGain = Math.min(1, Math.max(0, originalVolume))
         command
           .complexFilter([
+            `[0:a]volume=${originalGain}[a0]`,
             `[1:a]volume=${audioVolume}[a1]`,
-            '[0:a][a1]amix=inputs=2:duration=first:normalize=0[a]',
+            '[a0][a1]amix=inputs=2:duration=first:normalize=0[a]',
           ])
           .outputOptions(['-map', '0:v'])
           .map('[a]')
@@ -296,54 +299,27 @@ export class FFmpegService {
   }
 
   /**
-   * Reduce the original background music while keeping dialogue.
-   *
-   * ffmpeg has no AI source separation, so this uses the classic
-   * center-channel approach: dialogue in typical stereo content
-   * sits in the phantom center while music spreads across the
-   * sides. The track is widened to 3.0 with a derived center
-   * (L+R)/2, ffmpeg's dialoguenhance filter lifts that center,
-   * and the downmix folds the center back in with the sides
-   * turned down. Strength 0 leaves the mix almost untouched;
-   * strength 1 is the most aggressive. Music whose lead vocal is
-   * also centered will not separate cleanly — that needs a
-   * dedicated AI separator, which this is not.
+   * Adjust the volume of the video's ORIGINAL audio track.
+   * Volume is 0-1: 1 keeps the original level, 0 mutes the track
+   * completely (a silent track is kept, so the file can still be
+   * mixed with new audio afterwards). The picture is copied
+   * without re-encoding.
    */
-  static async removeBackgroundMusic(
+  static async adjustVolume(
     inputPath: string,
     outputPath: string,
-    strength: number = 0.7,
+    volume: number = 1,
     onProgress?: (progress: number) => void
   ): Promise<void> {
     const metadata = await FFmpegService.getVideoMetadata(inputPath)
     if (!metadata.audioCodec) {
-      throw new Error('Video has no audio track to remove music from')
+      throw new Error('Video has no audio track to adjust')
     }
-
-    const s = Math.min(1, Math.max(0, strength))
-    const original = (1 - 0.8 * s).toFixed(2)
-    const enhance = (1 + 2 * s).toFixed(2)
-    const sideGain = (1 - 0.5 * s).toFixed(2)
-
-    const filters: string[] = []
-    const channels = metadata.audioChannels ?? 2
-    if (channels === 1) {
-      filters.push('pan=stereo|c0=c0|c1=c0')
-    } else if (channels > 2) {
-      // Standard surround order FL FR FC LFE BL BR: fold the
-      // center into a stereo pair first.
-      filters.push('pan=stereo|c0=c0+0.7*c2|c1=c1+0.7*c2')
-    }
-    filters.push(
-      'pan=3.0|c0=c0|c1=c1|c2=0.5*c0+0.5*c1',
-      `dialoguenhance=original=${original}:enhance=${enhance}:voice=4`,
-      `pan=stereo|c0=${sideGain}*c0+0.8*c2|c1=${sideGain}*c1+0.8*c2`,
-      'alimiter=limit=0.95'
-    )
+    const gain = Math.min(1, Math.max(0, volume))
 
     return new Promise((resolve, reject) => {
       ffmpeg(inputPath)
-        .audioFilter(filters.join(','))
+        .audioFilter(`volume=${gain}`)
         .outputOptions(['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k'])
         .output(outputPath)
         .on('progress', (progress) => {

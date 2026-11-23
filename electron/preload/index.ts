@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
   RemoveSilenceRequest,
-  RemoveMusicRequest,
+  AdjustVolumeRequest,
   AddMusicRequest,
   ExportRequest,
 } from '@/types/ipc'
@@ -22,8 +22,8 @@ export const preload = {
   removeSilence: (request: RemoveSilenceRequest) =>
     ipcRenderer.invoke('ffmpeg:removeSilence', request),
 
-  removeMusic: (request: RemoveMusicRequest) =>
-    ipcRenderer.invoke('ffmpeg:removeMusic', request),
+  adjustVolume: (request: AdjustVolumeRequest) =>
+    ipcRenderer.invoke('ffmpeg:adjustVolume', request),
 
   addMusic: (request: AddMusicRequest) =>
     ipcRenderer.invoke('ffmpeg:addMusic', request),
