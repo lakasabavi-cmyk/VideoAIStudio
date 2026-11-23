@@ -100,13 +100,14 @@ for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
 
 ## System Monitor (added 2026-11-23)
 
-- A live panel at the bottom of the Settings page, refreshed
-  every 2 seconds while the page is open: CPU load, RAM
-  used/total, GPU utilisation, VRAM used/total and GPU
-  temperature (via nvidia-smi; needs the NVIDIA driver). CPU
-  temperature is shown when Windows exposes it via WMI,
-  otherwise "n/a". Bars turn amber at 70% and red at 90%
-  (or when the GPU reaches 85°C).
+- A compact live panel pinned to the bottom of the left
+  sidebar (moved there 2026-11-23 so it is visible from every
+  tab), refreshed every 2 seconds: CPU load, RAM used/total,
+  GPU utilisation, VRAM used/total and GPU temperature (via
+  nvidia-smi; needs the NVIDIA driver). CPU temperature is
+  appended to the CPU row when Windows exposes it via WMI.
+  Bars turn amber at 70% and red at 90% (or when the GPU
+  reaches 85°C).
 
 ## Settings layout (2026-11-23)
 
@@ -139,7 +140,7 @@ for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
   system-stats sample every 10s during upscale jobs (CPU, RAM,
   GPU util, VRAM, GPU temp) so the load right before a death
   is on record.
-- Settings page → App Log (under System Monitor): shows the
+- Settings page → App Log (bottom of the page): shows the
   last 300 lines, auto-refreshes every 5s, with Refresh and
   Open Log File buttons.
 

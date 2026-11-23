@@ -2,8 +2,8 @@ import { FC, useCallback, useEffect, useRef, useState } from 'react'
 import { RefreshCw, FolderOpen } from 'lucide-react'
 
 /**
- * Viewer for the on-disk app log (Settings page, under the
- * System Monitor). The log is written synchronously by the main
+ * Viewer for the on-disk app log (bottom of the Settings page).
+ * The log is written synchronously by the main
  * process, so after a crash — even a full machine shutdown —
  * reopening the app shows exactly what happened up to the end:
  * job starts/finishes, tool failures, and the system stats

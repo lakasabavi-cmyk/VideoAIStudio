@@ -2,12 +2,12 @@ import { FC, useEffect, useState } from 'react'
 import type { SystemStats } from '@/types/ipc'
 
 /**
- * Live machine monitor shown at the bottom of the Settings page:
- * CPU, RAM, GPU utilisation, VRAM and temperatures, refreshed
- * every 2 seconds while the page is open. Heavy jobs (Real-ESRGAN,
- * RIFE) push the GPU hard, so this sits where the user configures
- * them. In a plain browser (no Electron API) it shows a note
- * instead of numbers.
+ * Compact live machine monitor pinned to the bottom of the
+ * sidebar, visible from every tab: CPU, RAM, GPU utilisation,
+ * VRAM and temperatures, refreshed every 2 seconds. Heavy jobs
+ * (Real-ESRGAN, RIFE) push the GPU hard for a long time, so the
+ * load and the temperature stay in sight while they run.
+ * In a plain browser (no Electron API) it shows a short note.
  */
 export const SystemMonitor: FC = () => {
   const [stats, setStats] = useState<SystemStats | null>(null)
@@ -37,96 +37,80 @@ export const SystemMonitor: FC = () => {
   }, [])
 
   const bar = (percent: number, hot = false) => (
-    <div className="w-full bg-gray-800 rounded-full h-2">
+    <div className="w-full bg-gray-800 rounded-full h-1">
       <div
         className={
-          'h-2 rounded-full ' +
+          'h-1 rounded-full ' +
           (hot || percent >= 90
             ? 'bg-red-500'
             : percent >= 70
               ? 'bg-amber-500'
-              : 'bg-indigo-600')
+              : 'bg-indigo-500')
         }
         style={{ width: Math.max(0, Math.min(100, percent)) + '%' }}
       />
     </div>
   )
 
-  const tempText = (celsius?: number) =>
-    celsius === undefined ? 'n/a' : `${celsius}°C`
+  const row = (label: string, value: string, percent: number, hot = false) => (
+    <div>
+      <div className="flex justify-between items-baseline text-[11px] leading-tight">
+        <span className="text-gray-400">{label}</span>
+        <span className="text-gray-300 tabular-nums">{value}</span>
+      </div>
+      <div className="mt-1">{bar(percent, hot)}</div>
+    </div>
+  )
 
   return (
-    <div className="bg-gray-900 rounded-lg p-6 border border-gray-800 space-y-4">
-      <h2 className="text-xl font-bold text-white">System Monitor</h2>
+    <div className="px-4 py-4 border-t border-gray-800 space-y-2.5">
+      <p className="text-[10px] font-semibold tracking-widest text-gray-500 uppercase">
+        System
+      </p>
       {unavailable ? (
-        <p className="text-sm text-gray-500">
+        <p className="text-[11px] text-gray-500">
           Live stats are available in the desktop app.
         </p>
       ) : !stats ? (
-        <p className="text-sm text-gray-500">Loading…</p>
+        <p className="text-[11px] text-gray-500">Loading…</p>
       ) : (
-        <div className="space-y-4">
-          <div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-300">CPU</span>
-              <span className="text-gray-400">
-                {stats.cpuPercent}% · Temp {tempText(stats.cpuTempC)}
-              </span>
-            </div>
-            <div className="mt-1">{bar(stats.cpuPercent)}</div>
-          </div>
-          <div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-300">RAM</span>
-              <span className="text-gray-400">
-                {stats.ramUsedGB} / {stats.ramTotalGB} GB ({stats.ramPercent}%)
-              </span>
-            </div>
-            <div className="mt-1">{bar(stats.ramPercent)}</div>
-          </div>
+        <>
+          {row(
+            'CPU',
+            `${stats.cpuPercent}%` +
+              (stats.cpuTempC !== undefined ? ` · ${stats.cpuTempC}°C` : ''),
+            stats.cpuPercent
+          )}
+          {row(
+            'RAM',
+            `${stats.ramUsedGB}/${stats.ramTotalGB} GB`,
+            stats.ramPercent
+          )}
           {stats.gpu ? (
             <>
-              <div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-300">GPU — {stats.gpu.name}</span>
-                  <span className="text-gray-400">
-                    {stats.gpu.utilPercent}% · Temp {tempText(stats.gpu.tempC)}
-                  </span>
-                </div>
-                <div className="mt-1">
-                  {bar(stats.gpu.utilPercent, stats.gpu.tempC >= 85)}
-                </div>
-              </div>
-              <div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-300">VRAM</span>
-                  <span className="text-gray-400">
-                    {Math.round(stats.gpu.vramUsedMB)} /{' '}
-                    {Math.round(stats.gpu.vramTotalMB)} MB (
-                    {stats.gpu.vramTotalMB > 0
-                      ? Math.round(
-                          (stats.gpu.vramUsedMB / stats.gpu.vramTotalMB) * 100
-                        )
-                      : 0}
-                    %)
-                  </span>
-                </div>
-                <div className="mt-1">
-                  {bar(
-                    stats.gpu.vramTotalMB > 0
-                      ? (stats.gpu.vramUsedMB / stats.gpu.vramTotalMB) * 100
-                      : 0
-                  )}
-                </div>
-              </div>
+              {row(
+                'GPU',
+                `${stats.gpu.utilPercent}% · ${stats.gpu.tempC}°C`,
+                stats.gpu.utilPercent,
+                stats.gpu.tempC >= 85
+              )}
+              {row(
+                'VRAM',
+                `${(stats.gpu.vramUsedMB / 1024).toFixed(1)}/${(stats.gpu.vramTotalMB / 1024).toFixed(1)} GB`,
+                stats.gpu.vramTotalMB > 0
+                  ? (stats.gpu.vramUsedMB / stats.gpu.vramTotalMB) * 100
+                  : 0
+              )}
+              <p className="text-[10px] text-gray-600 truncate">
+                {stats.gpu.name}
+              </p>
             </>
           ) : (
-            <p className="text-sm text-gray-500">
-              GPU stats unavailable (nvidia-smi not found — NVIDIA driver
-              required).
+            <p className="text-[11px] text-gray-500">
+              GPU stats unavailable (nvidia-smi not found).
             </p>
           )}
-        </div>
+        </>
       )}
     </div>
   )
