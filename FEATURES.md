@@ -417,3 +417,11 @@ from `media:duration` (`getMediaDuration`), because
   closed instantly with no message on Hung's machine. The
   bat is now goto-free and re-runs itself logged to
   tools/setup-whisper-log.txt, keeping the window open.
+  v0.3.3: the v0.3.2 bat died with "from was unexpected at
+  this time" — echo text inside its if-blocks contained
+  "(64-bit)", and cmd.exe reads that closing paren as the
+  end of the block and executes the rest of the line
+  ("from https://...") as a command. All block echo text
+  is now parenthesis-free (the rule is noted in the bat
+  itself), and the venv-version probe moved out of its
+  block into a single-line if.
