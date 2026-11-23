@@ -46,6 +46,14 @@ interface SilenceRange {
   end: number
 }
 
+/** Parse an ffmpeg "HH:MM:SS.cc" timemark into seconds. */
+function timemarkSeconds(timemark?: string): number {
+  if (!timemark) return 0
+  const parts = timemark.split(':').map((p) => parseFloat(p))
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return 0
+  return parts[0] * 3600 + parts[1] * 60 + parts[2]
+}
+
 /** Parse a "num/den" frame-rate string (e.g. "30000/1001") into fps. */
 function parseFrameRate(rate: string | undefined): number {
   if (!rate) return 0
@@ -893,6 +901,243 @@ export class FFmpegService {
   /**
    * Export video with quality preset
    */
+
+  /**
+   * Trim to [startSeconds, endSeconds]. Re-encoded, so the cut
+   * points are frame-accurate.
+   */
+  static async trimVideo(
+    inputPath: string,
+    outputPath: string,
+    startSeconds: number,
+    endSeconds: number,
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    const duration = Math.max(0.1, endSeconds - startSeconds)
+    return new Promise((resolve, reject) => {
+      FFmpegService.trackCommand(ffmpeg(inputPath))
+        .seekInput(Math.max(0, startSeconds))
+        .duration(duration)
+        .output(outputPath)
+        .outputOptions(
+          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium',
+          '-crf', '20', '-c:a', 'aac'
+        )
+        .on('progress', (progress) => {
+          const done = timemarkSeconds(progress.timemark)
+          onProgress?.(Math.min(100, Math.round((done / duration) * 100)))
+        })
+        .on('end', () => resolve())
+        .on('error', reject)
+        .run()
+    })
+  }
+
+  /**
+   * Split a video into a parts folder. Mode 'at' cuts once into
+   * part1/part2; mode 'segments' cuts every segmentSeconds into
+   * part000, part001, ... Returns the produced file paths.
+   */
+  static async splitVideo(
+    inputPath: string,
+    partsDir: string,
+    options: {
+      mode: 'at' | 'segments'
+      atSeconds?: number
+      segmentSeconds?: number
+    },
+    onProgress?: (progress: number) => void
+  ): Promise<string[]> {
+    fs.mkdirSync(partsDir, { recursive: true })
+    if (options.mode === 'at') {
+      const at = Math.max(0, options.atSeconds ?? 0)
+      const metadata = await FFmpegService.getVideoMetadata(inputPath)
+      const part1 = path.join(partsDir, 'part1.mp4')
+      const part2 = path.join(partsDir, 'part2.mp4')
+      await FFmpegService.trimVideo(inputPath, part1, 0, at, (p) =>
+        onProgress?.(Math.round(p / 2))
+      )
+      await FFmpegService.trimVideo(
+        inputPath,
+        part2,
+        at,
+        metadata.duration,
+        (p) => onProgress?.(50 + Math.round(p / 2))
+      )
+      return [part1, part2]
+    }
+    // Segments are cut as a loop of frame-accurate trims. (The
+    // ffmpeg segment muxer was tried first and rejected: on the
+    // bundled build it skips the first keyframe boundary, so a
+    // 12s clip at 4s segments came out as 8s + 4s.)
+    const segmentSeconds = Math.max(1, options.segmentSeconds ?? 10)
+    const metadata = await FFmpegService.getVideoMetadata(inputPath)
+    const totalParts = Math.max(
+      1,
+      Math.ceil(metadata.duration / segmentSeconds)
+    )
+    const parts: string[] = []
+    for (let i = 0; i < totalParts; i++) {
+      const start = i * segmentSeconds
+      const end = Math.min(metadata.duration, start + segmentSeconds)
+      if (end - start < 0.05) break
+      const partPath = path.join(
+        partsDir,
+        `part${String(i).padStart(3, '0')}.mp4`
+      )
+      await FFmpegService.trimVideo(inputPath, partPath, start, end, (p) =>
+        onProgress?.(Math.round(((i + p / 100) / totalParts) * 100))
+      )
+      parts.push(partPath)
+    }
+    return parts
+  }
+
+  /** Crop to a rectangle (x, y = top-left corner). */
+  static async cropVideo(
+    inputPath: string,
+    outputPath: string,
+    crop: { x: number; y: number; width: number; height: number },
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    // yuv420p needs even dimensions.
+    const width = crop.width - (crop.width % 2)
+    const height = crop.height - (crop.height % 2)
+    if (width < 16 || height < 16) {
+      throw new Error('Crop rectangle is too small')
+    }
+    return new Promise((resolve, reject) => {
+      FFmpegService.trackCommand(ffmpeg(inputPath))
+        .videoFilters(
+          `crop=${width}:${height}:${Math.max(0, crop.x)}:${Math.max(0, crop.y)}`
+        )
+        .output(outputPath)
+        .outputOptions(
+          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium',
+          '-crf', '20', '-c:a', 'aac'
+        )
+        .on('progress', (progress) => onProgress?.(progress.percent || 0))
+        .on('end', () => resolve())
+        .on('error', reject)
+        .run()
+    })
+  }
+
+  /**
+   * Change playback speed (video and audio together). Factor >1
+   * is faster, <1 is slower.
+   */
+  static async changeSpeed(
+    inputPath: string,
+    outputPath: string,
+    factor: number,
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    if (!(factor > 0)) throw new Error('Speed factor must be positive')
+    const metadata = await FFmpegService.getVideoMetadata(inputPath)
+    const outDuration = metadata.duration / factor
+    // atempo accepts 0.5-2.0 per stage on older ffmpeg builds;
+    // chain stages to reach any factor safely.
+    const stages: number[] = []
+    let rest = factor
+    while (rest > 2) {
+      stages.push(2)
+      rest /= 2
+    }
+    while (rest < 0.5) {
+      stages.push(0.5)
+      rest /= 0.5
+    }
+    stages.push(rest)
+    return new Promise((resolve, reject) => {
+      const command = FFmpegService.trackCommand(ffmpeg(inputPath))
+        .videoFilters(`setpts=${(1 / factor).toFixed(6)}*PTS`)
+      if (metadata.audioCodec) {
+        command.audioFilters(stages.map((s) => `atempo=${s.toFixed(5)}`))
+      } else {
+        command.noAudio()
+      }
+      command
+        .output(outputPath)
+        .outputOptions(
+          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium',
+          '-crf', '20', '-c:a', 'aac'
+        )
+        .on('progress', (progress) => {
+          const done = timemarkSeconds(progress.timemark)
+          if (outDuration > 0) {
+            onProgress?.(Math.min(100, Math.round((done / outDuration) * 100)))
+          }
+        })
+        .on('end', () => resolve())
+        .on('error', reject)
+        .run()
+    })
+  }
+
+  /** Rotate (90 CW / 90 CCW / 180) or flip (horizontal / vertical). */
+  static async transformVideo(
+    inputPath: string,
+    outputPath: string,
+    transform: 'rot90' | 'rot-90' | 'rot180' | 'flipH' | 'flipV',
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    const filters: Record<string, string> = {
+      rot90: 'transpose=1',
+      'rot-90': 'transpose=2',
+      rot180: 'hflip,vflip',
+      flipH: 'hflip',
+      flipV: 'vflip',
+    }
+    const filter = filters[transform]
+    if (!filter) throw new Error(`Unknown transform: ${transform}`)
+    return new Promise((resolve, reject) => {
+      FFmpegService.trackCommand(ffmpeg(inputPath))
+        .videoFilters(filter)
+        .output(outputPath)
+        .outputOptions(
+          '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'medium',
+          '-crf', '20', '-c:a', 'aac'
+        )
+        .on('progress', (progress) => onProgress?.(progress.percent || 0))
+        .on('end', () => resolve())
+        .on('error', reject)
+        .run()
+    })
+  }
+
+  /**
+   * Build a timeline thumbnail sheet: frames sampled evenly
+   * across the video, tiled into one PNG (default 5x2 = 10
+   * frames) — a contact sheet for eyeballing the whole clip.
+   */
+  static async timelineThumbnails(
+    inputPath: string,
+    outputPath: string,
+    columns = 5,
+    rows = 2,
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    const metadata = await FFmpegService.getVideoMetadata(inputPath)
+    const count = Math.max(1, columns * rows)
+    const interval = Math.max(0.5, metadata.duration / count)
+    onProgress?.(10)
+    await new Promise<void>((resolve, reject) => {
+      FFmpegService.trackCommand(ffmpeg(inputPath))
+        .outputOptions(
+          '-vf',
+          `fps=1/${interval.toFixed(3)},scale=320:-2,tile=${columns}x${rows}`,
+          '-frames:v',
+          '1'
+        )
+        .output(outputPath)
+        .on('end', () => resolve())
+        .on('error', reject)
+        .run()
+    })
+    onProgress?.(100)
+  }
+
   static async exportVideo(
     inputPath: string,
     outputPath: string,

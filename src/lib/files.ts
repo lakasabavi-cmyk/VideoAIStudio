@@ -32,6 +32,19 @@ export function withSuffix(filePath: string, suffix: string): string {
  * The frame lands in a "first frame" folder next to the video,
  * ready to be used as the first frame of the next generated clip.
  */
+/** Folder a split job writes its parts into: "<name>_parts" next to the video. */
+export function partsDirPath(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/')
+  const slash = normalized.lastIndexOf('/')
+  const dir = slash >= 0 ? normalized.slice(0, slash) : '.'
+  const base = (slash >= 0 ? normalized.slice(slash + 1) : normalized).replace(
+    /\.[^.]+$/,
+    ''
+  )
+  const sep = filePath.includes('\\') ? '\\' : '/'
+  return dir.split('/').join(sep) + sep + base + '_parts'
+}
+
 export function lastFramePath(filePath: string): string {
   const sep = filePath.includes('\\') ? '\\' : '/'
   const parts = filePath.split(sep)

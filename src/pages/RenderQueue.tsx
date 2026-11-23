@@ -11,6 +11,12 @@ const KIND_LABELS: Record<RenderJobKind, string> = {
   'get-last-frame': 'Get Last Frame',
   merge: 'Merge Videos',
   upscale: 'Upscale',
+  trim: 'Trim',
+  split: 'Split Clip',
+  crop: 'Crop',
+  speed: 'Speed',
+  transform: 'Rotate / Flip',
+  timeline: 'Timeline Thumbnails',
   export: 'Export',
 }
 

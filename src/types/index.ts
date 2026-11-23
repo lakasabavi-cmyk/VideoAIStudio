@@ -59,6 +59,12 @@ export type RenderJobKind =
   | 'get-last-frame'
   | 'merge'
   | 'upscale'
+  | 'trim'
+  | 'split'
+  | 'crop'
+  | 'speed'
+  | 'transform'
+  | 'timeline'
 
 export interface RenderJobParams {
   threshold?: number
@@ -81,6 +87,15 @@ export interface RenderJobParams {
     outputSuffix: string
   }
   format?: 'mp4' | 'webm' | 'mov'
+  trim?: { startSeconds: number; endSeconds: number }
+  split?: {
+    mode: 'at' | 'segments'
+    atSeconds?: number
+    segmentSeconds?: number
+  }
+  crop?: { x: number; y: number; width: number; height: number }
+  speed?: { factor: number }
+  transform?: 'rot90' | 'rot-90' | 'rot180' | 'flipH' | 'flipV'
   quality?: 'low' | 'medium' | 'high'
 }
 

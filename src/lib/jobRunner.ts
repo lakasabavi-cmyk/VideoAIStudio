@@ -3,7 +3,7 @@ import { useRenderQueue } from '@/stores/renderQueue'
 import { useSettingsStore } from '@/stores/settingsStore'
 import type { ProcessResult } from '@/types/ipc'
 import type { RenderJob, RenderJobKind, VideoFile } from '@/types'
-import { withSuffix, lastFramePath } from './files'
+import { withSuffix, lastFramePath, partsDirPath } from './files'
 
 /**
  * Sequential render-queue runner.
@@ -148,6 +148,43 @@ export function enqueueUpscale(video: VideoFile): string | null {
   return null
 }
 
+export function enqueueTrim(
+  video: VideoFile,
+  startSeconds: number,
+  endSeconds: number
+) {
+  enqueue(baseJob('trim', video, { trim: { startSeconds, endSeconds } }))
+}
+
+export function enqueueSplit(
+  video: VideoFile,
+  split: { mode: 'at' | 'segments'; atSeconds?: number; segmentSeconds?: number }
+) {
+  enqueue(baseJob('split', video, { split }))
+}
+
+export function enqueueCrop(
+  video: VideoFile,
+  crop: { x: number; y: number; width: number; height: number }
+) {
+  enqueue(baseJob('crop', video, { crop }))
+}
+
+export function enqueueSpeed(video: VideoFile, factor: number) {
+  enqueue(baseJob('speed', video, { speed: { factor } }))
+}
+
+export function enqueueTransform(
+  video: VideoFile,
+  transform: 'rot90' | 'rot-90' | 'rot180' | 'flipH' | 'flipV'
+) {
+  enqueue(baseJob('transform', video, { transform }))
+}
+
+export function enqueueTimeline(video: VideoFile) {
+  enqueue(baseJob('timeline', video, undefined))
+}
+
 export function enqueueExport(video: VideoFile) {
   const { exportFormat, exportQuality } = useSettingsStore.getState()
   enqueue(
@@ -221,6 +258,52 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
         rife: upscale.rife,
       })
     }
+    case 'trim':
+      return api.trimVideo({
+        videoPath: job.inputPath,
+        outputPath: withSuffix(job.inputPath, '.trim'),
+        startSeconds: job.params?.trim?.startSeconds ?? 0,
+        endSeconds: job.params?.trim?.endSeconds ?? 0,
+      })
+    case 'split':
+      return api.splitVideo({
+        videoPath: job.inputPath,
+        partsDir: partsDirPath(job.inputPath),
+        mode: job.params?.split?.mode ?? 'segments',
+        atSeconds: job.params?.split?.atSeconds,
+        segmentSeconds: job.params?.split?.segmentSeconds,
+      })
+    case 'crop':
+      return api.cropVideo({
+        videoPath: job.inputPath,
+        outputPath: withSuffix(job.inputPath, '.crop'),
+        x: job.params?.crop?.x ?? 0,
+        y: job.params?.crop?.y ?? 0,
+        width: job.params?.crop?.width ?? 0,
+        height: job.params?.crop?.height ?? 0,
+      })
+    case 'speed':
+      return api.changeSpeed({
+        videoPath: job.inputPath,
+        outputPath: withSuffix(
+          job.inputPath,
+          `.speed${job.params?.speed?.factor ?? 1}x`
+        ),
+        factor: job.params?.speed?.factor ?? 1,
+      })
+    case 'transform':
+      return api.transformVideo({
+        videoPath: job.inputPath,
+        outputPath: withSuffix(job.inputPath, `.${job.params?.transform ?? 'rot90'}`),
+        transform: job.params?.transform ?? 'rot90',
+      })
+    case 'timeline':
+      return api.timelineThumbnails({
+        videoPath: job.inputPath,
+        outputPath: withSuffix(job.inputPath, '.timeline.png'),
+        columns: 5,
+        rows: 2,
+      })
     case 'export':
       return api.exportVideo({
         videoPath: job.inputPath,

@@ -8,6 +8,12 @@ import type {
   SystemStats,
   AddMusicRequest,
   ExportRequest,
+  TrimRequest,
+  SplitRequest,
+  CropRequest,
+  SpeedRequest,
+  TransformRequest,
+  TimelineThumbsRequest,
   ProcessResult,
 } from './ipc'
 
@@ -48,6 +54,12 @@ export interface ElectronAPI {
   getLastFrame: (request: GetLastFrameRequest) => Promise<ProcessResult>
   mergeVideos: (request: MergeVideosRequest) => Promise<ProcessResult>
   upscaleVideo: (request: UpscaleRequest) => Promise<ProcessResult>
+  trimVideo: (request: TrimRequest) => Promise<ProcessResult>
+  splitVideo: (request: SplitRequest) => Promise<ProcessResult>
+  cropVideo: (request: CropRequest) => Promise<ProcessResult>
+  changeSpeed: (request: SpeedRequest) => Promise<ProcessResult>
+  transformVideo: (request: TransformRequest) => Promise<ProcessResult>
+  timelineThumbnails: (request: TimelineThumbsRequest) => Promise<ProcessResult>
   getSystemStats: () => Promise<SystemStats>
   /** Kill the processes of the currently running job. */
   cancelActiveProcessing: () => Promise<number>

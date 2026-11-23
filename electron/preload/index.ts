@@ -7,6 +7,12 @@ import type {
   UpscaleRequest,
   AddMusicRequest,
   ExportRequest,
+  TrimRequest,
+  SplitRequest,
+  CropRequest,
+  SpeedRequest,
+  TransformRequest,
+  TimelineThumbsRequest,
 } from '@/types/ipc'
 
 export const preload = {
@@ -42,6 +48,19 @@ export const preload = {
 
   exportVideo: (request: ExportRequest) =>
     ipcRenderer.invoke('ffmpeg:export', request),
+
+  trimVideo: (request: TrimRequest) =>
+    ipcRenderer.invoke('ffmpeg:trim', request),
+  splitVideo: (request: SplitRequest) =>
+    ipcRenderer.invoke('ffmpeg:split', request),
+  cropVideo: (request: CropRequest) =>
+    ipcRenderer.invoke('ffmpeg:crop', request),
+  changeSpeed: (request: SpeedRequest) =>
+    ipcRenderer.invoke('ffmpeg:speed', request),
+  transformVideo: (request: TransformRequest) =>
+    ipcRenderer.invoke('ffmpeg:transform', request),
+  timelineThumbnails: (request: TimelineThumbsRequest) =>
+    ipcRenderer.invoke('ffmpeg:timelineThumbs', request),
 
   getSystemStats: () => ipcRenderer.invoke('system:stats'),
   cancelActiveProcessing: () => ipcRenderer.invoke('ffmpeg:cancelActive'),

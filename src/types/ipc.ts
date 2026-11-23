@@ -83,6 +83,53 @@ export interface SystemStats {
   cpuTempC?: number
 }
 
+export interface TrimRequest {
+  videoPath: string
+  outputPath: string
+  startSeconds: number
+  endSeconds: number
+}
+
+export interface SplitRequest {
+  videoPath: string
+  /** Folder the parts are written into. */
+  partsDir: string
+  mode: 'at' | 'segments'
+  atSeconds?: number
+  segmentSeconds?: number
+}
+
+export interface CropRequest {
+  videoPath: string
+  outputPath: string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface SpeedRequest {
+  videoPath: string
+  outputPath: string
+  /** >1 is faster, <1 is slower (0.5 = half speed). */
+  factor: number
+}
+
+export type TransformKind = 'rot90' | 'rot-90' | 'rot180' | 'flipH' | 'flipV'
+
+export interface TransformRequest {
+  videoPath: string
+  outputPath: string
+  transform: TransformKind
+}
+
+export interface TimelineThumbsRequest {
+  videoPath: string
+  outputPath: string
+  columns?: number
+  rows?: number
+}
+
 export interface AddMusicRequest {
   videoPath: string
   musicPath: string

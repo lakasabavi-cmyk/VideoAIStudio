@@ -126,6 +126,28 @@ for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
   Windows cannot reliably suspend these external tools, so
   cancel-and-restart replaces it.
 
+## Edit Tools — Trim, Split, Crop, Speed, Rotate/Flip, Thumbnails (added 2026-11-23)
+
+- A panel under the Current Video on the Dashboard; every action
+  is a normal queue job and writes next to the source file.
+- Trim: [start, end] seconds, re-encoded so cuts are
+  frame-accurate. Output name.trim.mp4.
+- Split Clip: either one cut at a point (part1/part2) or every
+  N seconds (part000, part001, ...), into a "<name>_parts"
+  folder. Segments are cut as a loop of frame-accurate trims —
+  the ffmpeg segment muxer was tried and rejected: on the
+  bundled build it skips the first keyframe boundary (a 12s
+  clip at 4s segments came out as 8s + 4s).
+- Crop: centre presets 9:16 / 1:1 / 16:9 fill the x/y/w/h
+  fields; any rectangle can be typed. Output name.crop.mp4.
+- Speed: 0.25x-4x chips; setpts for video, chained atempo
+  (0.5-2.0 per stage) for audio. Output name.speed2x.mp4 etc.
+- Rotate / Flip: 90 CW (transpose=1), 90 CCW (transpose=2),
+  180 (hflip+vflip), Flip H, Flip V. Output name.rot90.mp4 etc.
+- Timeline Thumbnails: one PNG contact sheet, 10 frames
+  sampled evenly across the clip in a 5x2 tile.
+  Output name.timeline.png.
+
 ## Export
 
 - Re-encodes with explicit codecs (libx264 / yuv420p / AAC).

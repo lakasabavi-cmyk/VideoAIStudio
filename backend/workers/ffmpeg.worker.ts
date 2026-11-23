@@ -10,6 +10,12 @@ import type {
   UpscaleRequest,
   AddMusicRequest,
   ExportRequest,
+  TrimRequest,
+  SplitRequest,
+  CropRequest,
+  SpeedRequest,
+  TransformRequest,
+  TimelineThumbsRequest,
   ProcessResult,
 } from '@/types/ipc'
 
@@ -159,6 +165,103 @@ export function setupFFmpegWorkers() {
       }
     }
   )
+
+  // Trim to [startSeconds, endSeconds]
+  ipcMain.handle('ffmpeg:trim', async (event, request: TrimRequest) => {
+    try {
+      await FFmpegService.trimVideo(
+        request.videoPath,
+        request.outputPath,
+        request.startSeconds,
+        request.endSeconds,
+        progressFor(event)
+      )
+      return done(event, request.outputPath)
+    } catch (error) {
+      return fail(event, error)
+    }
+  })
+
+  // Split into a parts folder; the first part is the reported output
+  ipcMain.handle('ffmpeg:split', async (event, request: SplitRequest) => {
+    try {
+      const parts = await FFmpegService.splitVideo(
+        request.videoPath,
+        request.partsDir,
+        {
+          mode: request.mode,
+          atSeconds: request.atSeconds,
+          segmentSeconds: request.segmentSeconds,
+        },
+        progressFor(event)
+      )
+      if (parts.length === 0) throw new Error('Split produced no files')
+      return done(event, parts[0])
+    } catch (error) {
+      return fail(event, error)
+    }
+  })
+
+  // Crop to a rectangle
+  ipcMain.handle('ffmpeg:crop', async (event, request: CropRequest) => {
+    try {
+      await FFmpegService.cropVideo(
+        request.videoPath,
+        request.outputPath,
+        { x: request.x, y: request.y, width: request.width, height: request.height },
+        progressFor(event)
+      )
+      return done(event, request.outputPath)
+    } catch (error) {
+      return fail(event, error)
+    }
+  })
+
+  // Change playback speed (video + audio)
+  ipcMain.handle('ffmpeg:speed', async (event, request: SpeedRequest) => {
+    try {
+      await FFmpegService.changeSpeed(
+        request.videoPath,
+        request.outputPath,
+        request.factor,
+        progressFor(event)
+      )
+      return done(event, request.outputPath)
+    } catch (error) {
+      return fail(event, error)
+    }
+  })
+
+  // Rotate / flip
+  ipcMain.handle('ffmpeg:transform', async (event, request: TransformRequest) => {
+    try {
+      await FFmpegService.transformVideo(
+        request.videoPath,
+        request.outputPath,
+        request.transform,
+        progressFor(event)
+      )
+      return done(event, request.outputPath)
+    } catch (error) {
+      return fail(event, error)
+    }
+  })
+
+  // Timeline thumbnail contact sheet (PNG)
+  ipcMain.handle('ffmpeg:timelineThumbs', async (event, request: TimelineThumbsRequest) => {
+    try {
+      await FFmpegService.timelineThumbnails(
+        request.videoPath,
+        request.outputPath,
+        request.columns ?? 5,
+        request.rows ?? 2,
+        progressFor(event)
+      )
+      return done(event, request.outputPath)
+    } catch (error) {
+      return fail(event, error)
+    }
+  })
 
   // Cancel the currently running job's processes
   ipcMain.handle('ffmpeg:cancelActive', async () => FFmpegService.cancelActive())
