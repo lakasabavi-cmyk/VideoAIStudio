@@ -20,5 +20,5 @@
       "@backend/*": ["backend/*"]
     }
   },
-  "include": ["src", "backend/services", "backend/workers"]
+  "include": ["src", "backend/services", "backend/workers", "electron"]
 }

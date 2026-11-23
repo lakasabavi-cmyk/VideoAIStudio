@@ -14,6 +14,7 @@ export default defineConfig({
     outDir: 'dist/app',
     emptyOutDir: true,
   },
+  base: './',
   server: {
     port: 5173,
   },

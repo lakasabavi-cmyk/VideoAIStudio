@@ -1,4 +1,11 @@
-import { app, BrowserWindow, Menu, ipcMain, dialog } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  ipcMain,
+  dialog,
+  type MenuItemConstructorOptions,
+} from 'electron'
 import { isDev } from './utils'
 import { setupFFmpegWorkers } from '../../backend/workers/ffmpeg.worker'
 import path from 'path'
@@ -16,10 +23,9 @@ function createWindow() {
     minWidth: 1000,
     minHeight: 600,
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, '../preload/index.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
-      enableRemoteModule: false,
     },
   })
 
@@ -104,7 +110,7 @@ ipcMain.handle('dialog:selectVideo', async () => {
 })
 
 // Create menu
-const template = [
+const template: MenuItemConstructorOptions[] = [
   {
     label: 'File',
     submenu: [

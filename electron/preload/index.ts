@@ -36,8 +36,6 @@ export const preload = {
 
 contextBridge.exposeInMainWorld('electronAPI', preload)
 
-declare global {
-  interface Window {
-    electronAPI: typeof preload
-  }
-}
+// Note: the Window.electronAPI type for the renderer is declared once
+// in src/types/electron.ts. Declaring it here too (as typeof preload)
+// conflicts with that declaration when both files are type-checked.
