@@ -37,6 +37,11 @@ export interface ProjectSettings {
   lanczosTarget: '1080p' | '2k' | '4k' | '8k'
   /** Real-ESRGAN scale factor; the model follows from it. */
   esrganScale: 2 | 3 | 4
+  /** 4x model: 'fast' = realesr-animevideov3-x4 (the same
+   * light video model as 2x/3x); 'quality' = realesrgan-x4plus
+   * (heavy photo model — sharper on real photos, several
+   * times slower). */
+  esrgan4xModel: 'fast' | 'quality'
   /** Real-ESRGAN tile size in px (0 = auto). Lower it (e.g. 256)
    * when a job dies with out-of-memory on large frames. */
   esrganTileSize: number

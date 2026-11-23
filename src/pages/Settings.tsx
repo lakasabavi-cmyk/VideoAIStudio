@@ -17,6 +17,7 @@ export const Settings: FC = () => {
     upscaleMethod: stored.upscaleMethod,
     lanczosTarget: stored.lanczosTarget,
     esrganScale: stored.esrganScale,
+    esrgan4xModel: stored.esrgan4xModel ?? 'fast',
     esrganTileSize: stored.esrganTileSize,
     esrganPath: stored.esrganPath,
     esrganModelsPath: stored.esrganModelsPath,
@@ -321,9 +322,43 @@ export const Settings: FC = () => {
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  2x and 3x use realesr-animevideov3 (video model), 4x uses
-                  realesrgan-x4plus. Saved as name_2x.mp4 / name_4x.mp4.
+                  2x and 3x use realesr-animevideov3 (lightweight video
+                  model). Saved as name_2x.mp4 / name_4x.mp4.
                 </p>
+                {draft.esrganScale === 4 && (
+                  <div className="mt-4">
+                    <label className="text-gray-300 text-sm">4x model</label>
+                    <div className="flex gap-2 mt-2">
+                      {(
+                        [
+                          { value: 'fast', label: 'Fast (video model)' },
+                          { value: 'quality', label: 'Quality (photo model)' },
+                        ] as const
+                      ).map((option) => (
+                        <button
+                          key={option.value}
+                          onClick={() =>
+                            setDraft({ ...draft, esrgan4xModel: option.value })
+                          }
+                          className={
+                            'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
+                            (draft.esrgan4xModel === option.value
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
+                          }
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Fast uses realesr-animevideov3-x4 — the same light
+                      model family as 2x/3x, several times quicker.
+                      Quality uses realesrgan-x4plus — heavier photo
+                      model, sharper on real photos but much slower.
+                    </p>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-gray-300 text-sm">

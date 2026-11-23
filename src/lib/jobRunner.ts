@@ -106,8 +106,23 @@ const LANCZOS_TARGETS = { '1080p': 1080, '2k': 1440, '4k': 2160, '8k': 4320 } as
 const ESRGAN_MODELS = {
   2: 'realesr-animevideov3-x2',
   3: 'realesr-animevideov3-x3',
-  4: 'realesrgan-x4plus',
 } as const
+
+// 4x has two models in the standard pack: the light video
+// model (fast, same family as 2x/3x) and the heavy photo
+// model (quality). Hung found the photo model far too slow
+// on his laptop, so fast is the default.
+function esrganModel(
+  scale: 2 | 3 | 4,
+  model4x: 'fast' | 'quality'
+): string {
+  if (scale === 4) {
+    return model4x === 'quality'
+      ? 'realesrgan-x4plus'
+      : 'realesr-animevideov3-x4'
+  }
+  return ESRGAN_MODELS[scale]
+}
 
 export function enqueueUpscale(
   video: VideoFile,
@@ -134,7 +149,7 @@ export function enqueueUpscale(
         upscale: {
           method: 'realesrgan',
           scale: settings.esrganScale,
-          model: ESRGAN_MODELS[settings.esrganScale],
+          model: esrganModel(settings.esrganScale, settings.esrgan4xModel),
           exePath: settings.esrganPath,
           modelsPath: settings.esrganModelsPath,
           tileSize: settings.esrganTileSize,

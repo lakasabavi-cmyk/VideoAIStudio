@@ -298,3 +298,14 @@ from `media:duration` (`getMediaDuration`), because
   software. The heavy GPU work runs in external tools, so
   the UI loses almost nothing. Delete that file to
   re-enable hardware acceleration.
+
+## Fast 4x upscale
+
+- The 4x Real-ESRGAN model is a Settings choice ("4x model",
+  shown when the scale is 4x): **Fast** (default) uses
+  `realesr-animevideov3-x4` — the same lightweight video
+  model family as 2x/3x, several times quicker; **Quality**
+  uses `realesrgan-x4plus`, the heavy photo model that was
+  previously hard-wired to 4x and made it crawl on an 8GB
+  laptop GPU. Setting: `esrgan4xModel` (persisted; older
+  settings without it default to Fast).
