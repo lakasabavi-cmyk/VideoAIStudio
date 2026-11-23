@@ -206,7 +206,15 @@ Editor surface:
   all-zero cache entry is ignored and re-decoded, and every
   real decode (cache miss) is logged with its bucket count,
   sample count and max peak, so a flat waveform can be traced
-  from the App Log. On the draw side the bars are plain DOM
+  from the App Log. (Root cause of the long flat-waveform bug,
+  fixed in v0.2.4: these two methods — and only these two —
+  reached Electron through a dynamic `import('electron')`,
+  which esbuild preserves verbatim in the CJS main bundle;
+  the synthesized namespace has no `app`, so the call threw
+  before decoding or logging, while every static-import
+  feature kept working. Both now use the static import like
+  the rest of the backend. Never reintroduce a dynamic
+  `import('electron')` in this service.) On the draw side the bars are plain DOM
   elements, not a canvas — in GPU safe mode (hardware
   acceleration off) canvas painting proved unreliable on the
   target machine while the decode side verified healthy —

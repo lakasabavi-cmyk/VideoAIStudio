@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import ffmpeg from 'fluent-ffmpeg'
 import ffmpegStatic from 'ffmpeg-static'
 import ffprobeStatic from 'ffprobe-static'
@@ -5,6 +6,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { spawn } from 'child_process'
+import { createHash } from 'crypto'
 import type { UpscaleRequest } from '@/types/ipc'
 import { LogService } from './log.service'
 import { SystemService } from './system.service'
@@ -926,8 +928,6 @@ export class FFmpegService {
   ): Promise<number[]> {
     const length = Math.max(0.1, endSeconds - startSeconds)
     const count = Math.min(400, Math.max(8, Math.floor(buckets)))
-    const { createHash } = await import('crypto')
-    const { app } = await import('electron')
     const key = createHash('sha1')
       .update(
         `${mediaPath}|${startSeconds.toFixed(2)}|${endSeconds.toFixed(2)}|${count}`
@@ -1099,8 +1099,6 @@ export class FFmpegService {
     endSeconds: number,
     count: number
   ): Promise<string[]> {
-    const { createHash } = await import('crypto')
-    const { app } = await import('electron')
     const key = createHash('sha1')
       .update(`${videoPath}|${startSeconds.toFixed(2)}|${endSeconds.toFixed(2)}|${count}`)
       .digest('hex')
