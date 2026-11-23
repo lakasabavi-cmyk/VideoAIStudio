@@ -411,3 +411,9 @@ from `media:duration` (`getMediaDuration`), because
   of a singing clip, SRT remap arithmetic, ASS event
   count, cut render duration (15.08s − 3.38s cut = 11.70s)
   and a burned frame showing the yellow word highlight.
+  v0.3.2: the bat is written with CRLF endings (plus a
+  .gitattributes eol=crlf rule) — with LF endings cmd.exe
+  mis-seeks the v0.3.1 bat's goto labels and the window
+  closed instantly with no message on Hung's machine. The
+  bat is now goto-free and re-runs itself logged to
+  tools/setup-whisper-log.txt, keeping the window open.
