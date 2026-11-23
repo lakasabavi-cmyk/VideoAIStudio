@@ -28,7 +28,17 @@ function createWindow() {
       preload: path.join(__dirname, '../preload/index.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
+      // The preload is a bundled CommonJS file; Electron's sandboxed
+      // renderer loader will not execute it, which silently leaves
+      // window.electronAPI undefined in the page. contextIsolation
+      // stays on and nodeIntegration stays off, so the renderer
+      // still has no direct Node access.
+      sandbox: false,
     },
+  })
+
+  mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+    console.error(`[preload] failed to load ${preloadPath}:`, error)
   })
 
   const startUrl = isDev
