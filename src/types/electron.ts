@@ -1,5 +1,6 @@
 import type {
   RemoveSilenceRequest,
+  RemoveMusicRequest,
   AddMusicRequest,
   ExportRequest,
   ProcessResult,
@@ -38,6 +39,7 @@ export interface ElectronAPI {
   }>
   
   removeSilence: (request: RemoveSilenceRequest) => Promise<ProcessResult>
+  removeMusic: (request: RemoveMusicRequest) => Promise<ProcessResult>
   addMusic: (request: AddMusicRequest) => Promise<ProcessResult>
   exportVideo: (request: ExportRequest) => Promise<ProcessResult>
   

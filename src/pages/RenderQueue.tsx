@@ -6,6 +6,7 @@ import type { RenderJobKind } from '@/types'
 const KIND_LABELS: Record<RenderJobKind, string> = {
   'remove-silence': 'Remove Silence',
   'add-music': 'Add Music',
+  'remove-music': 'Remove Music',
   export: 'Export',
 }
 

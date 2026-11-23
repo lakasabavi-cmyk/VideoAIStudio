@@ -10,6 +10,7 @@ export const Settings: FC = () => {
     silenceThreshold: stored.silenceThreshold,
     backgroundMusic: stored.backgroundMusic,
     musicVolume: stored.musicVolume,
+    musicRemovalStrength: stored.musicRemovalStrength,
     exportFormat: stored.exportFormat,
     exportQuality: stored.exportQuality,
   })
@@ -93,6 +94,28 @@ export const Settings: FC = () => {
                 }
                 className="w-full mt-2"
               />
+            </div>
+            <div>
+              <label className="text-gray-300 text-sm">
+                Music Removal Strength: {draft.musicRemovalStrength}%
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={draft.musicRemovalStrength}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    musicRemovalStrength: parseInt(e.target.value, 10),
+                  })
+                }
+                className="w-full mt-2"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Used by Remove Music: higher pushes dialogue further
+                forward and turns the original music further down.
+              </p>
             </div>
           </div>
         </div>

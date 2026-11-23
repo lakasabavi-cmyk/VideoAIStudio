@@ -27,16 +27,24 @@ export interface ProjectSettings {
   silenceThreshold: number
   backgroundMusic?: string
   musicVolume: number
+  /** Background-music removal strength, stored as 0-100 percent. */
+  musicRemovalStrength: number
   exportFormat: 'mp4' | 'webm' | 'mov'
   exportQuality: 'low' | 'medium' | 'high'
 }
 
-export type RenderJobKind = 'remove-silence' | 'add-music' | 'export'
+export type RenderJobKind =
+  | 'remove-silence'
+  | 'add-music'
+  | 'export'
+  | 'remove-music'
 
 export interface RenderJobParams {
   threshold?: number
   musicPath?: string
   musicVolume?: number
+  /** Music-removal strength, 0-1 (converted from the settings percent). */
+  strength?: number
   format?: 'mp4' | 'webm' | 'mov'
   quality?: 'low' | 'medium' | 'high'
 }

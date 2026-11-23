@@ -4,6 +4,7 @@ import { FFmpegService } from '../services'
 import type {
   VideoImportRequest,
   RemoveSilenceRequest,
+  RemoveMusicRequest,
   AddMusicRequest,
   ExportRequest,
   ProcessResult,
@@ -39,23 +40,12 @@ function done(event: IpcMainInvokeEvent, outputPath: string): ProcessResult {
 }
 
 export function setupFFmpegWorkers() {
-  // Import and get metadata
-  ipcMain.handle('video:import', async (_, request: VideoImportRequest) => {
-    try {
-      const metadata = await FFmpegService.getVideoMetadata(request.filePath)
-      return {
-        success: true,
-        data: metadata,
-      }
-    } catch (error) {
-      return {
-        success: false,
-        error: (error as Error).message,
-      }
-    }
-  })
-
-  ipcMain.handle('video:metadata', async (_, { videoPath }: { videoPath: string }) => {
+  // One implementation behind both channels: 'video:import' (called by
+  // preload.importVideo with { filePath }) and 'video:metadata' (called
+  // by preload.getMetadata with { videoPath }) used to duplicate the
+  // same getVideoMetadata call. Both channels stay — preload and the
+  // renderer already use both — but they now share this helper.
+  async function loadVideoMetadata(videoPath: string) {
     try {
       const metadata = await FFmpegService.getVideoMetadata(videoPath)
       return {
@@ -68,6 +58,15 @@ export function setupFFmpegWorkers() {
         error: (error as Error).message,
       }
     }
+  }
+
+  // Import and get metadata
+  ipcMain.handle('video:import', async (_, request: VideoImportRequest) => {
+    return loadVideoMetadata(request.filePath)
+  })
+
+  ipcMain.handle('video:metadata', async (_, { videoPath }: { videoPath: string }) => {
+    return loadVideoMetadata(videoPath)
   })
 
   // Remove silence
@@ -85,6 +84,28 @@ export function setupFFmpegWorkers() {
           request.videoPath,
           outputPath,
           request.threshold,
+          progressFor(event)
+        )
+        return done(event, outputPath)
+      } catch (error) {
+        return fail(event, error)
+      }
+    }
+  )
+
+  // Remove background music (keep dialogue)
+  ipcMain.handle(
+    'ffmpeg:removeMusic',
+    async (event, request: RemoveMusicRequest): Promise<ProcessResult> => {
+      try {
+        const parsed = path.parse(request.videoPath)
+        const outputPath =
+          request.outputPath ??
+          path.join(parsed.dir, `${parsed.name}.nomusic.mp4`)
+        await FFmpegService.removeBackgroundMusic(
+          request.videoPath,
+          outputPath,
+          request.strength,
           progressFor(event)
         )
         return done(event, outputPath)

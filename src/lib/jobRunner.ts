@@ -62,6 +62,16 @@ export function enqueueRemoveSilence(video: VideoFile) {
   enqueue(baseJob('remove-silence', video, { threshold: silenceThreshold }))
 }
 
+export function enqueueRemoveMusic(video: VideoFile) {
+  const { musicRemovalStrength } = useSettingsStore.getState()
+  enqueue(
+    baseJob('remove-music', video, {
+      // Settings store strength as 0-100 percent; the service wants 0-1.
+      strength: musicRemovalStrength / 100,
+    })
+  )
+}
+
 export function enqueueExport(video: VideoFile) {
   const { exportFormat, exportQuality } = useSettingsStore.getState()
   enqueue(
@@ -93,6 +103,12 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
         videoPath: job.inputPath,
         outputPath: withSuffix(job.inputPath, '.nosil'),
         threshold: job.params?.threshold,
+      })
+    case 'remove-music':
+      return api.removeMusic({
+        videoPath: job.inputPath,
+        outputPath: withSuffix(job.inputPath, '.nomusic'),
+        strength: job.params?.strength,
       })
     case 'add-music':
       return api.addMusic({

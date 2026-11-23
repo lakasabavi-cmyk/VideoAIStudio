@@ -21,6 +21,7 @@ export const useSettingsStore = create<SettingsState>()(
       silenceThreshold: -40,
       backgroundMusic: undefined,
       musicVolume: 50,
+      musicRemovalStrength: 70,
       exportFormat: 'mp4',
       exportQuality: 'high',
       updateSettings: (partial) => set(partial),
@@ -32,6 +33,7 @@ export const useSettingsStore = create<SettingsState>()(
         silenceThreshold,
         backgroundMusic,
         musicVolume,
+        musicRemovalStrength,
         exportFormat,
         exportQuality,
       }) => ({
@@ -39,6 +41,7 @@ export const useSettingsStore = create<SettingsState>()(
         silenceThreshold,
         backgroundMusic,
         musicVolume,
+        musicRemovalStrength,
         exportFormat,
         exportQuality,
       }),

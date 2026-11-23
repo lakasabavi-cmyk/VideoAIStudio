@@ -28,6 +28,13 @@ export interface RemoveSilenceRequest {
   outputPath?: string
 }
 
+export interface RemoveMusicRequest {
+  videoPath: string
+  /** 0-1; higher removes more music and pushes dialogue further forward. */
+  strength?: number
+  outputPath?: string
+}
+
 export interface AddMusicRequest {
   videoPath: string
   musicPath: string
