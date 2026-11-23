@@ -108,6 +108,18 @@ for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
   otherwise "n/a". Bars turn amber at 70% and red at 90%
   (or when the GPU reaches 85°C).
 
+## Cancel a running job (added 2026-11-23)
+
+- The processing job in the Render Queue has a red Cancel
+  button (the trash button returns when the job is done).
+  Cancelling kills the job's processes immediately — the
+  ffmpeg encode, or the Real-ESRGAN / RIFE frame tool — and a
+  multi-stage upscale also stops between stages instead of
+  starting the next one. The job is recorded as "cancelled"
+  with how long it ran, not as failed. There is no Pause:
+  Windows cannot reliably suspend these external tools, so
+  cancel-and-restart replaces it.
+
 ## Export
 
 - Re-encodes with explicit codecs (libx264 / yuv420p / AAC).

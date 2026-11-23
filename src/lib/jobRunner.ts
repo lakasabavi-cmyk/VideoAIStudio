@@ -231,6 +231,23 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
   }
 }
 
+let cancelRequested = false
+
+/**
+ * Cancel the job that is currently processing: kill its
+ * processes in the main process and flag the runner so the job
+ * is recorded as cancelled (not failed) when it settles.
+ */
+export function cancelCurrentJob() {
+  if (!activeJobId) return
+  cancelRequested = true
+  try {
+    void window.electronAPI?.cancelActiveProcessing?.()
+  } catch {
+    /* the job will settle as failed instead */
+  }
+}
+
 async function processQueue() {
   if (running) return
   const next = useRenderQueue
@@ -253,24 +270,35 @@ async function processQueue() {
 
   try {
     const result = await execute(job)
-    updateJob({
-      ...job,
-      status: result.success ? 'completed' : 'failed',
-      progress: result.success ? 100 : job.progress,
-      outputPath: result.outputPath,
-      error: result.success ? undefined : result.error ?? 'Unknown error',
-      finishedAt: new Date(),
-      updatedAt: new Date(),
-    })
+    if (!result.success && cancelRequested) {
+      updateJob({
+        ...job,
+        status: 'cancelled',
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+      })
+    } else {
+      updateJob({
+        ...job,
+        status: result.success ? 'completed' : 'failed',
+        progress: result.success ? 100 : job.progress,
+        outputPath: result.outputPath,
+        error: result.success ? undefined : result.error ?? 'Unknown error',
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+      })
+    }
   } catch (error) {
+    const message = (error as Error).message
     updateJob({
       ...job,
-      status: 'failed',
-      error: (error as Error).message,
+      status: cancelRequested || /cancel/i.test(message) ? 'cancelled' : 'failed',
+      error: cancelRequested || /cancel/i.test(message) ? undefined : message,
       finishedAt: new Date(),
       updatedAt: new Date(),
     })
   } finally {
+    cancelRequested = false
     activeJobId = null
     running = false
     void processQueue()

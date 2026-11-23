@@ -160,6 +160,9 @@ export function setupFFmpegWorkers() {
     }
   )
 
+  // Cancel the currently running job's processes
+  ipcMain.handle('ffmpeg:cancelActive', async () => FFmpegService.cancelActive())
+
   // System monitor (CPU / RAM / GPU / temperatures)
   ipcMain.handle('system:stats', async () => SystemService.getStats())
 

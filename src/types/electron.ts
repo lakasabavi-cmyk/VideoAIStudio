@@ -49,6 +49,8 @@ export interface ElectronAPI {
   mergeVideos: (request: MergeVideosRequest) => Promise<ProcessResult>
   upscaleVideo: (request: UpscaleRequest) => Promise<ProcessResult>
   getSystemStats: () => Promise<SystemStats>
+  /** Kill the processes of the currently running job. */
+  cancelActiveProcessing: () => Promise<number>
   addMusic: (request: AddMusicRequest) => Promise<ProcessResult>
   exportVideo: (request: ExportRequest) => Promise<ProcessResult>
   

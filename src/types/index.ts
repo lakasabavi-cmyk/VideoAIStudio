@@ -91,7 +91,7 @@ export interface RenderJob {
   videoName: string
   inputPath: string
   params?: RenderJobParams
-  status: 'pending' | 'processing' | 'completed' | 'failed'
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled'
   progress: number
   /** Current pipeline stage label (e.g. "Extract Frames"), when the
    * running job reports stages. Shown in the Render Queue. */

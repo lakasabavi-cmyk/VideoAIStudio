@@ -57,6 +57,66 @@ function parseFrameRate(rate: string | undefined): number {
 
 export class FFmpegService {
   /**
+   * Cancellation support. Every long-running child (fluent-ffmpeg
+   * commands and the directly spawned frame tools) registers
+   * itself here; cancelActive() kills them all and bumps the
+   * epoch so multi-stage pipelines also stop between stages.
+   * The queue runs one job at a time, so "kill everything" is
+   * exactly "cancel the current job".
+   */
+  private static activeProcesses = new Set<{ kill: () => void }>()
+  private static cancelEpoch = 0
+
+  private static trackCommand<T extends ffmpeg.FfmpegCommand>(command: T): T {
+    const entry = {
+      kill: () => {
+        try {
+          command.kill('SIGKILL')
+        } catch {
+          /* process already gone */
+        }
+      },
+    }
+    FFmpegService.activeProcesses.add(entry)
+    const done = () => FFmpegService.activeProcesses.delete(entry)
+    command.on('end', done)
+    command.on('error', done)
+    return command
+  }
+
+  private static trackChild(child: import('child_process').ChildProcess): void {
+    const entry = {
+      kill: () => {
+        try {
+          child.kill('SIGKILL')
+        } catch {
+          /* process already gone */
+        }
+      },
+    }
+    FFmpegService.activeProcesses.add(entry)
+    const done = () => FFmpegService.activeProcesses.delete(entry)
+    child.on('close', done)
+    child.on('error', done)
+  }
+
+  /** Kill all running processing; returns how many were killed. */
+  static cancelActive(): number {
+    FFmpegService.cancelEpoch++
+    let killed = 0
+    for (const proc of FFmpegService.activeProcesses) {
+      proc.kill()
+      killed++
+    }
+    return killed
+  }
+
+  private static throwIfCancelled(epoch: number): void {
+    if (epoch !== FFmpegService.cancelEpoch) {
+      throw new Error('Processing cancelled by user')
+    }
+  }
+  /**
    * Get video metadata
    */
   static async getVideoMetadata(videoPath: string): Promise<VideoMetadata> {
@@ -110,7 +170,7 @@ export class FFmpegService {
       const ranges: SilenceRange[] = []
       let openStart: number | null = null
 
-      ffmpeg(inputPath)
+      FFmpegService.trackCommand(ffmpeg(inputPath))
         .audioFilter(
           `silencedetect=noise=${threshold}dB:d=${minSilenceDuration}`
         )
@@ -223,7 +283,7 @@ export class FFmpegService {
     )
 
     return new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
+      FFmpegService.trackCommand(ffmpeg(inputPath))
         .complexFilter(filters)
         .map('[outv]')
         .map('[outa]')
@@ -269,7 +329,7 @@ export class FFmpegService {
     const metadata = await FFmpegService.getVideoMetadata(videoPath)
 
     return new Promise((resolve, reject) => {
-      const command = ffmpeg()
+      const command = FFmpegService.trackCommand(ffmpeg())
         .input(videoPath)
         .input(audioPath)
         .inputOptions(['-stream_loop', '-1'])
@@ -329,7 +389,7 @@ export class FFmpegService {
     const gain = Math.min(1, Math.max(0, volume))
 
     return new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
+      FFmpegService.trackCommand(ffmpeg(inputPath))
         .audioFilter(`volume=${gain}`)
         .outputOptions(['-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k'])
         .output(outputPath)
@@ -369,7 +429,7 @@ export class FFmpegService {
     try {
       const pattern = path.join(tmpDir, 'tail-%04d.png')
       await new Promise<void>((resolve, reject) => {
-        ffmpeg(inputPath)
+        FFmpegService.trackCommand(ffmpeg(inputPath))
           .inputOptions(['-sseof', `-${windowSeconds.toFixed(3)}`])
           .output(pattern)
           .on('end', () => resolve())
@@ -468,7 +528,7 @@ export class FFmpegService {
     filters.push(`[cv]fps=${targetFps}[outv]`)
 
     return new Promise((resolve, reject) => {
-      const command = ffmpeg()
+      const command = FFmpegService.trackCommand(ffmpeg())
       inputPaths.forEach((inputPath) => command.input(inputPath))
       command
         .complexFilter(filters)
@@ -515,7 +575,7 @@ export class FFmpegService {
     const metadata = await FFmpegService.getVideoMetadata(inputPath)
     onProgress?.(0, 'Upscale')
     return new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
+      FFmpegService.trackCommand(ffmpeg(inputPath))
         .videoFilters(`scale=-2:${targetHeight}:flags=lanczos`)
         .outputOptions([
           '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
@@ -567,6 +627,7 @@ export class FFmpegService {
     onProgress?.(rangeStart, stage)
     await new Promise<void>((resolve, reject) => {
       const child = spawn(exePath, args, { windowsHide: true })
+      FFmpegService.trackChild(child)
       let stderrTail = ''
       child.stderr.on('data', (chunk) => {
         stderrTail = (stderrTail + String(chunk)).slice(-2000)
@@ -681,6 +742,7 @@ export class FFmpegService {
       rifeMultiplier = rife.multiplier === 4 ? 4 : 2
     }
 
+    const cancelEpoch = FFmpegService.cancelEpoch
     const metadata = await FFmpegService.getVideoMetadata(request.videoPath)
     const fps = metadata.fps > 0 ? metadata.fps : 30
     const totalFrames = Math.max(1, Math.round(metadata.duration * fps))
@@ -697,7 +759,7 @@ export class FFmpegService {
       const extractEnd = rife ? 8 : 10
       onProgress?.(0, 'Extract Frames')
       await new Promise<void>((resolve, reject) => {
-        ffmpeg(request.videoPath)
+        FFmpegService.trackCommand(ffmpeg(request.videoPath))
           .outputOptions(['-vsync', '0'])
           .output(path.join(framesDir, 'frame_%06d.png'))
           .on('progress', (progress) => {
@@ -716,6 +778,8 @@ export class FFmpegService {
       if (frameCount === 0) {
         throw new Error('Frame extraction produced no frames')
       }
+
+      FFmpegService.throwIfCancelled(cancelEpoch)
 
       // Stage 2 (optional): RIFE interpolation at native size.
       let esrganInputDir = framesDir
@@ -744,6 +808,8 @@ export class FFmpegService {
           .filter((f) => f.endsWith('.png')).length
       }
 
+      FFmpegService.throwIfCancelled(cancelEpoch)
+
       // Stage 3: Real-ESRGAN upscale of every frame.
       await FFmpegService.runFrameTool({
         exePath,
@@ -763,6 +829,8 @@ export class FFmpegService {
         toolName: 'Real-ESRGAN',
         onProgress,
       })
+
+      FFmpegService.throwIfCancelled(cancelEpoch)
 
       // Stage 4: rebuild. The frame pattern is derived from the
       // actual files (RIFE writes %08d names starting at 0, the
@@ -787,7 +855,7 @@ export class FFmpegService {
       )
       const outputFps = fps * rifeMultiplier
       await new Promise<void>((resolve, reject) => {
-        const command = ffmpeg()
+        const command = FFmpegService.trackCommand(ffmpeg())
           .input(pattern)
           .inputOptions([
             '-framerate', String(outputFps),
@@ -838,7 +906,7 @@ export class FFmpegService {
     }
 
     return new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
+      FFmpegService.trackCommand(ffmpeg(inputPath))
         .output(outputPath)
         .outputOptions(
           ...presets[quality],

@@ -1,6 +1,7 @@
 import { FC, useEffect, useState } from 'react'
-import { Trash2, CheckCircle, AlertCircle, Loader } from 'lucide-react'
+import { Trash2, CheckCircle, AlertCircle, Loader, Ban } from 'lucide-react'
 import { useRenderQueue } from '@/stores/renderQueue'
+import { cancelCurrentJob } from '@/lib/jobRunner'
 import type { RenderJobKind } from '@/types'
 
 const KIND_LABELS: Record<RenderJobKind, string> = {
@@ -58,7 +59,9 @@ export const RenderQueue: FC = () => {
     }
     if (job.finishedAt) {
       const took = new Date(job.finishedAt).getTime() - started
-      return `Took ${formatDuration(took)} · Finished ${formatClock(job.finishedAt)}`
+      return job.status === 'cancelled'
+        ? `Cancelled after ${formatDuration(took)} · ${formatClock(job.finishedAt)}`
+        : `Took ${formatDuration(took)} · Finished ${formatClock(job.finishedAt)}`
     }
     return ''
   }
@@ -71,6 +74,8 @@ export const RenderQueue: FC = () => {
         return <Loader className="text-blue-500 animate-spin" size={20} />
       case 'failed':
         return <AlertCircle className="text-red-500" size={20} />
+      case 'cancelled':
+        return <Ban className="text-gray-500" size={20} />
       default:
         return <div className="w-5 h-5 border border-gray-600 rounded" />
     }
@@ -136,12 +141,21 @@ export const RenderQueue: FC = () => {
               </div>
               <div className="flex items-center gap-4 ml-4">
                 <span className="text-sm text-gray-400">{job.progress}%</span>
-                <button
-                  onClick={() => removeJob(job.id)}
-                  className="p-2 hover:bg-gray-800 rounded transition-colors"
-                >
-                  <Trash2 size={18} className="text-red-500" />
-                </button>
+                {job.status === 'processing' ? (
+                  <button
+                    onClick={() => cancelCurrentJob()}
+                    className="px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                  >
+                    Cancel
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => removeJob(job.id)}
+                    className="p-2 hover:bg-gray-800 rounded transition-colors"
+                  >
+                    <Trash2 size={18} className="text-red-500" />
+                  </button>
+                )}
               </div>
             </div>
           ))}

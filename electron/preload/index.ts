@@ -44,6 +44,7 @@ export const preload = {
     ipcRenderer.invoke('ffmpeg:export', request),
 
   getSystemStats: () => ipcRenderer.invoke('system:stats'),
+  cancelActiveProcessing: () => ipcRenderer.invoke('ffmpeg:cancelActive'),
 
   // Progress tracking
   onRenderProgress: (callback: (update: { progress: number; stage?: string }) => void) =>
