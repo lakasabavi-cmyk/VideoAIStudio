@@ -8,6 +8,7 @@ const KIND_LABELS: Record<RenderJobKind, string> = {
   'add-music': 'Add Music',
   'adjust-volume': 'Adjust Volume',
   'get-last-frame': 'Get Last Frame',
+  merge: 'Merge Videos',
   export: 'Export',
 }
 

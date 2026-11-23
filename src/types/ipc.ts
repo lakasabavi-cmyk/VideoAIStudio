@@ -40,6 +40,11 @@ export interface GetLastFrameRequest {
   outputPath?: string
 }
 
+export interface MergeVideosRequest {
+  videoPaths: string[]
+  outputPath: string
+}
+
 export interface AddMusicRequest {
   videoPath: string
   musicPath: string

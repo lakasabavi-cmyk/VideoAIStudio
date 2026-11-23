@@ -6,6 +6,7 @@ import type {
   RemoveSilenceRequest,
   AdjustVolumeRequest,
   GetLastFrameRequest,
+  MergeVideosRequest,
   AddMusicRequest,
   ExportRequest,
   ProcessResult,
@@ -135,6 +136,23 @@ export function setupFFmpegWorkers() {
           progressFor(event)
         )
         return done(event, outputPath)
+      } catch (error) {
+        return fail(event, error)
+      }
+    }
+  )
+
+  // Merge videos (first frame of each following clip is dropped)
+  ipcMain.handle(
+    'ffmpeg:merge',
+    async (event, request: MergeVideosRequest): Promise<ProcessResult> => {
+      try {
+        await FFmpegService.mergeVideos(
+          request.videoPaths,
+          request.outputPath,
+          progressFor(event)
+        )
+        return done(event, request.outputPath)
       } catch (error) {
         return fail(event, error)
       }

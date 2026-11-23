@@ -76,6 +76,20 @@ export function enqueueGetLastFrame(video: VideoFile) {
   enqueue(baseJob('get-last-frame', video, undefined))
 }
 
+/**
+ * Merge all given videos in list order. The first frame of every
+ * clip after the first is dropped (see the merge service), so the
+ * job needs at least two videos.
+ */
+export function enqueueMerge(videos: VideoFile[]) {
+  if (videos.length < 2) return
+  const job = baseJob('merge', videos[0], {
+    inputPaths: videos.map((v) => v.path),
+  })
+  job.videoName = `${videos[0].name} + ${videos.length - 1} more`
+  enqueue(job)
+}
+
 export function enqueueExport(video: VideoFile) {
   const { exportFormat, exportQuality } = useSettingsStore.getState()
   enqueue(
@@ -128,6 +142,11 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
       return api.getLastFrame({
         videoPath: job.inputPath,
         outputPath: lastFramePath(job.inputPath),
+      })
+    case 'merge':
+      return api.mergeVideos({
+        videoPaths: job.params?.inputPaths ?? [job.inputPath],
+        outputPath: withSuffix(job.inputPath, '.merged'),
       })
     case 'export':
       return api.exportVideo({

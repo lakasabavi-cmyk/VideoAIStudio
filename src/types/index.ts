@@ -39,6 +39,7 @@ export type RenderJobKind =
   | 'export'
   | 'adjust-volume'
   | 'get-last-frame'
+  | 'merge'
 
 export interface RenderJobParams {
   threshold?: number
@@ -47,6 +48,8 @@ export interface RenderJobParams {
   /** Original-track volume, 0-1 (converted from the settings percent). */
   volume?: number
   originalVolume?: number
+  /** All input paths for a merge job, in merge order. */
+  inputPaths?: string[]
   format?: 'mp4' | 'webm' | 'mov'
   quality?: 'low' | 'medium' | 'high'
 }

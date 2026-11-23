@@ -3,6 +3,7 @@ import type {
   RemoveSilenceRequest,
   AdjustVolumeRequest,
   GetLastFrameRequest,
+  MergeVideosRequest,
   AddMusicRequest,
   ExportRequest,
 } from '@/types/ipc'
@@ -28,6 +29,9 @@ export const preload = {
 
   getLastFrame: (request: GetLastFrameRequest) =>
     ipcRenderer.invoke('ffmpeg:getLastFrame', request),
+
+  mergeVideos: (request: MergeVideosRequest) =>
+    ipcRenderer.invoke('ffmpeg:merge', request),
 
   addMusic: (request: AddMusicRequest) =>
     ipcRenderer.invoke('ffmpeg:addMusic', request),

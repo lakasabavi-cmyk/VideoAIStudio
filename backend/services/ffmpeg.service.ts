@@ -34,6 +34,9 @@ export interface VideoMetadata {
   codec: string
   audioCodec?: string
   audioChannels?: number
+  /** Duration of the video stream itself (the container duration
+   * can run longer because of audio padding). */
+  videoDuration?: number
 }
 
 interface SilenceRange {
@@ -81,6 +84,10 @@ export class FFmpegService {
           codec: stream.codec_name || 'unknown',
           audioCodec: audioStream?.codec_name,
           audioChannels: audioStream?.channels,
+          videoDuration:
+            typeof stream.duration === 'number'
+              ? stream.duration
+              : undefined,
         })
       })
     })
@@ -382,6 +389,114 @@ export class FFmpegService {
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true })
     }
+  }
+
+  /**
+   * Merge several videos into one, in the given order.
+   *
+   * The clips are produced by chaining: each scene is generated
+   * from the previous scene's last frame, so that frame appears
+   * twice — as the last frame of clip N and the first frame of
+   * clip N+1. To remove the duplicate, the FIRST FRAME of every
+   * clip after the first is dropped (frame-exact video trim; the
+   * audio is trimmed by the same one-frame duration of its own
+   * clip). All clips are normalised to the first clip's size;
+   * clips without an audio track get a silent track.
+   *
+   * Frame-exactness note (verified by frame-colour tests): each
+   * segment's audio is cut/padded to EXACTLY its video length
+   * inside the filter graph. Without that lock the concat
+   * filter pads segments whose audio runs longer than their
+   * video and invents duplicate frames at the joins — the very
+   * thing this feature exists to remove. A two-pass concat
+   * demuxer join was also tried and rejected: the MP4/AAC
+   * timestamp offsets shifted frames at the joins instead.
+   */
+  static async mergeVideos(
+    inputPaths: string[],
+    outputPath: string,
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    if (inputPaths.length < 2) {
+      throw new Error('Merging needs at least two videos')
+    }
+    const metas: VideoMetadata[] = []
+    for (const inputPath of inputPaths) {
+      metas.push(await FFmpegService.getVideoMetadata(inputPath))
+    }
+    const target = metas[0]
+    const targetFps = target.fps > 0 ? Math.round(target.fps) : 30
+
+    const filters: string[] = []
+    const concatInputs: string[] = []
+    let outputDuration = 0
+    metas.forEach((meta, i) => {
+      const clipFps = meta.fps > 0 ? meta.fps : targetFps
+      const dropFrames = i === 0 ? 0 : 1
+      const dropSeconds = dropFrames / clipFps
+      // Length of this clip's video after the drop; the audio is
+      // locked to exactly this length (see the note above).
+      const videoLength = Math.max(
+        0.1,
+        (meta.videoDuration ?? meta.duration) - dropSeconds
+      )
+      filters.push(
+        `[${i}:v]trim=start_frame=${dropFrames},setpts=PTS-STARTPTS,` +
+          `scale=${target.width}:${target.height},` +
+          `format=yuv420p,setsar=1[v${i}]`
+      )
+      if (meta.audioCodec) {
+        filters.push(
+          `[${i}:a]atrim=start=${dropSeconds.toFixed(5)},asetpts=PTS-STARTPTS,` +
+            `aresample=48000,aformat=channel_layouts=stereo,` +
+            `apad,atrim=duration=${videoLength.toFixed(3)}[a${i}]`
+        )
+      } else {
+        filters.push(
+          `anullsrc=channel_layout=stereo:sample_rate=48000,` +
+            `atrim=duration=${videoLength.toFixed(3)}[a${i}]`
+        )
+      }
+      concatInputs.push(`[v${i}][a${i}]`)
+      outputDuration += videoLength
+    })
+    filters.push(
+      `${concatInputs.join('')}concat=n=${metas.length}:v=1:a=1[cv][ca]`
+    )
+    filters.push(`[cv]fps=${targetFps}[outv]`)
+
+    return new Promise((resolve, reject) => {
+      const command = ffmpeg()
+      inputPaths.forEach((inputPath) => command.input(inputPath))
+      command
+        .complexFilter(filters)
+        .map('[outv]')
+        .map('[ca]')
+        .outputOptions([
+          '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+          '-c:a', 'aac', '-b:a', '192k',
+        ])
+        .output(outputPath)
+        .on('progress', (progress) => {
+          if (progress.timemark && outputDuration > 0) {
+            const parts = progress.timemark.split(':')
+            const seconds =
+              parseInt(parts[0], 10) * 3600 +
+              parseInt(parts[1], 10) * 60 +
+              parseFloat(parts[2])
+            const percent = Math.round((seconds / outputDuration) * 100)
+            if (Number.isFinite(percent)) {
+              onProgress?.(Math.min(100, percent))
+            }
+          }
+        })
+        .on('end', () => {
+          onProgress?.(100)
+          resolve()
+        })
+        .on('error', reject)
+        .run()
+    })
   }
 
   /**
