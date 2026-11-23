@@ -225,59 +225,7 @@ export const Settings: FC = () => {
 
           {draft.upscaleMethod === 'realesrgan' && (
             <div className="space-y-4">
-              <div>
-                <label className="text-gray-300 text-sm">Scale / model</label>
-                <div className="flex gap-2 mt-2">
-                  {([2, 3, 4] as const).map((scale) => (
-                    <button
-                      key={scale}
-                      onClick={() => setDraft({ ...draft, esrganScale: scale })}
-                      className={
-                        'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
-                        (draft.esrganScale === scale
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
-                      }
-                    >
-                      {scale}x
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  2x and 3x use realesr-animevideov3 (video model), 4x uses
-                  realesrgan-x4plus. Saved as name_2x.mp4 / name_4x.mp4.
-                </p>
-              </div>
-              <div>
-                <label className="text-gray-300 text-sm">
-                  Real-ESRGAN executable (realesrgan-ncnn-vulkan.exe)
-                </label>
-                <input
-                  type="text"
-                  value={draft.esrganPath}
-                  onChange={(e) =>
-                    setDraft({ ...draft, esrganPath: e.target.value })
-                  }
-                  placeholder="C:\\tools\\realesrgan\\realesrgan-ncnn-vulkan.exe"
-                  className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-gray-300 text-sm">
-                  Models folder (blank = "models" next to the executable)
-                </label>
-                <input
-                  type="text"
-                  value={draft.esrganModelsPath}
-                  onChange={(e) =>
-                    setDraft({ ...draft, esrganModelsPath: e.target.value })
-                  }
-                  placeholder="C:\\tools\\realesrgan\\models"
-                  className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
-                />
-              </div>
-
-              <div className="border-t border-gray-800 pt-4 space-y-4">
+              <div className="space-y-4">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
@@ -353,6 +301,59 @@ export const Settings: FC = () => {
                   </>
                 )}
               </div>
+              <div className="border-t border-gray-800 pt-4">
+                <label className="text-gray-300 text-sm">Scale / model</label>
+                <div className="flex gap-2 mt-2">
+                  {([2, 3, 4] as const).map((scale) => (
+                    <button
+                      key={scale}
+                      onClick={() => setDraft({ ...draft, esrganScale: scale })}
+                      className={
+                        'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
+                        (draft.esrganScale === scale
+                          ? 'bg-indigo-600 text-white'
+                          : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
+                      }
+                    >
+                      {scale}x
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  2x and 3x use realesr-animevideov3 (video model), 4x uses
+                  realesrgan-x4plus. Saved as name_2x.mp4 / name_4x.mp4.
+                </p>
+              </div>
+              <div>
+                <label className="text-gray-300 text-sm">
+                  Real-ESRGAN executable (realesrgan-ncnn-vulkan.exe)
+                </label>
+                <input
+                  type="text"
+                  value={draft.esrganPath}
+                  onChange={(e) =>
+                    setDraft({ ...draft, esrganPath: e.target.value })
+                  }
+                  placeholder="C:\\tools\\realesrgan\\realesrgan-ncnn-vulkan.exe"
+                  className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-gray-300 text-sm">
+                  Models folder (blank = "models" next to the executable)
+                </label>
+                <input
+                  type="text"
+                  value={draft.esrganModelsPath}
+                  onChange={(e) =>
+                    setDraft({ ...draft, esrganModelsPath: e.target.value })
+                  }
+                  placeholder="C:\\tools\\realesrgan\\models"
+                  className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
+                />
+              </div>
+
+
             </div>
           )}
         </div>

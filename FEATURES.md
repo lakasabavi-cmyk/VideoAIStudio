@@ -108,6 +108,12 @@ for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
   otherwise "n/a". Bars turn amber at 70% and red at 90%
   (or when the GPU reaches 85°C).
 
+## Settings layout (2026-11-23)
+
+- Inside the Upscale card, the RIFE block sits ABOVE the
+  Real-ESRGAN scale/path fields, mirroring the pipeline order
+  (interpolation runs before the upscale).
+
 ## Cancel a running job (added 2026-11-23)
 
 - The processing job in the Render Queue has a red Cancel
