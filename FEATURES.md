@@ -207,9 +207,13 @@ Editor surface:
   body to reorder, and a Clip Inspector panel (in/out points,
   position, lane, volume, remove-duplicated-first-frame, remove
   clip).
-- Split at Cursor: splits the clip under the playhead into two
-  timeline clips (video or the selected audio clip), honoring the
-  dropped first frame when the clip's fps is known.
+- Split at Cursor: splits a clip at the playhead into two
+  timeline clips. The current selection wins — with an audio clip
+  selected it splits that audio clip even when the playhead also
+  sits over a video clip; with nothing selected it splits the
+  clip under the playhead (video first, then any audio clip).
+  Video splits honor the dropped first frame when the clip's fps
+  is known.
 - Icon tool bar between the preview and the timeline (this
   replaced the old Edit Tools panel on the Dashboard): Trim,
   Split file, Crop, Speed, Rotate/Flip and Timeline Sheet render

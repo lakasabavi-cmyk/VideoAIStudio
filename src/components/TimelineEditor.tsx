@@ -629,7 +629,35 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
       })()
     : undefined
 
+  const anyAudioUnderPlayhead = audioClips.find((c) => {
+    const start = audioStartAbs(c, audioClips, laneOffsets)
+    return (
+      playhead > start + 0.05 && playhead < start + keptAudio(c) - 0.05
+    )
+  })
+
   const splitAtCursor = () => {
+    // The current selection wins: with an audio clip selected,
+    // Split cuts that audio clip even when the playhead also sits
+    // over a video clip (the usual case — the video track spans
+    // the whole timeline). With nothing selected, split whatever
+    // clip is under the playhead: video first, then any audio.
+    if (selectedAudio && audioClipUnderPlayhead) {
+      if (store.splitAudioClip(audioClipUnderPlayhead.id, playhead)) {
+        onMessage(
+          `Split ${audioClipUnderPlayhead.name} at ${fmtT(playhead)}.`
+        )
+        return
+      }
+    }
+    if (
+      selectedVideo &&
+      videoClipUnderPlayhead?.id === selectedVideo.id &&
+      store.splitVideoClip(selectedVideo.id, playhead)
+    ) {
+      onMessage(`Split ${selectedVideo.name} at ${fmtT(playhead)}.`)
+      return
+    }
     if (videoClipUnderPlayhead) {
       if (store.splitVideoClip(videoClipUnderPlayhead.id, playhead)) {
         onMessage(
@@ -638,9 +666,11 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
         return
       }
     }
-    if (audioClipUnderPlayhead) {
-      if (store.splitAudioClip(audioClipUnderPlayhead.id, playhead)) {
-        onMessage(`Split ${audioClipUnderPlayhead.name} at ${fmtT(playhead)}.`)
+    if (anyAudioUnderPlayhead) {
+      if (store.splitAudioClip(anyAudioUnderPlayhead.id, playhead)) {
+        onMessage(
+          `Split ${anyAudioUnderPlayhead.name} at ${fmtT(playhead)}.`
+        )
         return
       }
     }
@@ -1125,9 +1155,9 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
         <div className="flex items-center gap-1.5 flex-wrap">
           <button
             onClick={splitAtCursor}
-            disabled={!videoClipUnderPlayhead && !audioClipUnderPlayhead}
+            disabled={!videoClipUnderPlayhead && !anyAudioUnderPlayhead}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/80 hover:bg-red-500 disabled:bg-gray-800 disabled:text-gray-500 text-white text-xs font-medium rounded-lg transition-colors"
-            title="Split the clip under the playhead into two clips, right on the timeline"
+            title="Split at the playhead — the selected clip wins: select an audio clip to split the audio, a video clip to split the video"
           >
             <Scissors size={14} /> Split at Cursor
             <span className="font-mono text-[10px] opacity-80">{fmtT(playhead)}</span>
