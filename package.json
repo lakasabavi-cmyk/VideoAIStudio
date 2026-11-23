@@ -2,7 +2,7 @@
     "name": "video-ai-studio",
     "version": "0.1.0",
     "description": "Professional video editing and AI processing studio",
-    "main": "dist/electron/main.js",
+    "main": "dist/electron/main.cjs",
     "type": "module",
     "homepage": "./",
     "scripts": {
@@ -11,7 +11,7 @@
         "electron": "wait-on http://localhost:5173 && electron .",
         "build": "npm run build:app && npm run build:electron && npm run build:preload",
         "build:app": "vite build",
-        "build:electron": "esbuild electron/main/main.ts --bundle --platform=node --target=node16 --format=esm --external:electron --external:ffmpeg-static --external:ffprobe-static --outfile=dist/electron/main.js",
+        "build:electron": "esbuild electron/main/main.ts --bundle --platform=node --target=node16 --format=cjs --external:electron --external:ffmpeg-static --external:ffprobe-static --outfile=dist/electron/main.cjs",
         "preview": "vite preview",
         "type-check": "tsc --noEmit",
         "lint": "eslint . --ext .ts,.tsx,.js,.jsx",

@@ -9,10 +9,12 @@ import {
 import { isDev } from './utils'
 import { setupFFmpegWorkers } from '../../backend/workers/ffmpeg.worker'
 import path from 'path'
-import { fileURLToPath } from 'node:url'
+// (no fileURLToPath shim: the main bundle is CommonJS — see
+// build:electron in package.json — so __dirname is available
+// natively; an import.meta.url shim breaks under CJS.)
 import fs from 'fs'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
 
 let mainWindow: BrowserWindow | null = null
 
