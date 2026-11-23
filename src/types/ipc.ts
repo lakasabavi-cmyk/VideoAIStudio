@@ -24,8 +24,8 @@ export interface VideoImportResponse {
 
 export interface RemoveSilenceRequest {
   videoPath: string
-  threshold: number
-  projectId: string
+  threshold?: number
+  outputPath?: string
 }
 
 export interface AddMusicRequest {
@@ -40,4 +40,11 @@ export interface ExportRequest {
   outputPath: string
   format: 'mp4' | 'webm' | 'mov'
   quality: 'low' | 'medium' | 'high'
+}
+
+/** Result returned by every ffmpeg processing handler. */
+export interface ProcessResult {
+  success: boolean
+  outputPath?: string
+  error?: string
 }

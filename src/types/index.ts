@@ -31,9 +31,23 @@ export interface ProjectSettings {
   exportQuality: 'low' | 'medium' | 'high'
 }
 
+export type RenderJobKind = 'remove-silence' | 'add-music' | 'export'
+
+export interface RenderJobParams {
+  threshold?: number
+  musicPath?: string
+  musicVolume?: number
+  format?: 'mp4' | 'webm' | 'mov'
+  quality?: 'low' | 'medium' | 'high'
+}
+
 export interface RenderJob {
   id: string
-  projectId: string
+  projectId?: string
+  kind: RenderJobKind
+  videoName: string
+  inputPath: string
+  params?: RenderJobParams
   status: 'pending' | 'processing' | 'completed' | 'failed'
   progress: number
   outputPath?: string

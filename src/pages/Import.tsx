@@ -11,32 +11,24 @@ export const Import: FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [lastImported, setLastImported] = useState<VideoFile | null>(null)
 
-  const handleSelectVideo = async () => {
+  /** Shared import pipeline: load metadata, store in Zustand. */
+  const importFromPath = async (
+    filePath: string,
+    fileName: string,
+    fileSize: number
+  ) => {
     setError(null)
     setIsLoading(true)
 
     try {
-      // Select video file
-      const selectResult = await window.electronAPI.selectVideo()
-      if (!selectResult.success || !selectResult.data) {
-        setError(selectResult.error || 'Failed to select video')
-        setIsLoading(false)
-        return
-      }
-
-      const { filePath, fileSize, fileName } = selectResult.data
-
-      // Get video metadata
       const metadataResult = await window.electronAPI.getVideoMetadata(filePath)
       if (!metadataResult.success || !metadataResult.data) {
         setError(metadataResult.error || 'Failed to load video metadata')
-        setIsLoading(false)
         return
       }
 
       const metadata = metadataResult.data
-      
-      // Create video file object
+
       const videoFile: VideoFile = {
         id: uuidv4(),
         path: filePath,
@@ -51,7 +43,6 @@ export const Import: FC = () => {
         createdAt: new Date(),
       }
 
-      // Add to store and set as current
       addVideo(videoFile)
       setCurrentVideo(videoFile)
       setLastImported(videoFile)
@@ -63,9 +54,42 @@ export const Import: FC = () => {
     }
   }
 
+  const handleSelectVideo = async () => {
+    const selectResult = await window.electronAPI.selectVideo()
+    if (!selectResult.success || !selectResult.data) {
+      // A cancelled dialog is not an error worth showing.
+      if (selectResult.error && !/cancel/i.test(selectResult.error)) {
+        setError(selectResult.error)
+      }
+      return
+    }
+
+    const { filePath, fileSize, fileName } = selectResult.data
+    await importFromPath(filePath, fileName, fileSize)
+  }
+
   const handleDragEnter = () => setIsDragging(true)
   const handleDragLeave = () => setIsDragging(false)
-  const handleDrop = () => setIsDragging(false)
+  const handleDragOver = (e: React.DragEvent) => {
+    // Required, otherwise the browser never fires the drop event.
+    e.preventDefault()
+    setIsDragging(true)
+  }
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+
+    const file = e.dataTransfer.files?.[0]
+    if (!file) return
+
+    // In Electron, a dropped File carries its absolute path.
+    const filePath = (file as File & { path?: string }).path
+    if (!filePath) {
+      setError('Could not read the dropped file path')
+      return
+    }
+    await importFromPath(filePath, file.name, file.size)
+  }
 
   return (
     <div className="p-8 space-y-8">
@@ -84,6 +108,7 @@ export const Import: FC = () => {
       <div
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
         onDrop={handleDrop}
         className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
           isDragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-gray-700 hover:border-gray-600'

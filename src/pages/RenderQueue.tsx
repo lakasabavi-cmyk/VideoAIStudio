@@ -1,6 +1,13 @@
 import { FC } from 'react'
 import { Trash2, CheckCircle, AlertCircle, Loader } from 'lucide-react'
 import { useRenderQueue } from '@/stores/renderQueue'
+import type { RenderJobKind } from '@/types'
+
+const KIND_LABELS: Record<RenderJobKind, string> = {
+  'remove-silence': 'Remove Silence',
+  'add-music': 'Add Music',
+  export: 'Export',
+}
 
 export const RenderQueue: FC = () => {
   const { jobs, removeJob, clearCompleted } = useRenderQueue()
@@ -44,21 +51,33 @@ export const RenderQueue: FC = () => {
           {jobs.map((job) => (
             <div
               key={job.id}
-              className="bg-gray-900 rounded-lg p-4 border border-gray-800 flex items-center justify-between"
+              className="bg-gray-900 rounded-lg p-4 border border-gray-800 flex items-start justify-between"
             >
-              <div className="flex items-center gap-4 flex-1">
-                {getStatusIcon(job.status)}
-                <div className="flex-1">
-                  <p className="text-white font-medium">Project {job.projectId}</p>
+              <div className="flex items-start gap-4 flex-1 min-w-0">
+                <div className="mt-1">{getStatusIcon(job.status)}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-medium">
+                    {KIND_LABELS[job.kind]} — {job.videoName}
+                  </p>
                   <div className="w-full bg-gray-800 rounded-full h-2 mt-2">
                     <div
                       className="bg-indigo-600 h-2 rounded-full"
                       style={{ width: job.progress + '%' }}
                     />
                   </div>
+                  {job.status === 'completed' && job.outputPath && (
+                    <p className="text-sm text-green-400 mt-2 break-all">
+                      Output: {job.outputPath}
+                    </p>
+                  )}
+                  {job.status === 'failed' && job.error && (
+                    <p className="text-sm text-red-400 mt-2 break-all">
+                      {job.error}
+                    </p>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 ml-4">
                 <span className="text-sm text-gray-400">{job.progress}%</span>
                 <button
                   onClick={() => removeJob(job.id)}

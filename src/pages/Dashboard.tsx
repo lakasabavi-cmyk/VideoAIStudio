@@ -1,12 +1,62 @@
-import { FC } from 'react'
+import { FC, useState } from 'react'
 import { useVideoStore } from '@/stores/videoStore'
 import { useRenderQueue } from '@/stores/renderQueue'
 import { VideoPreview } from '@/components/VideoPreview'
-import { Trash2 } from 'lucide-react'
+import {
+  enqueueRemoveSilence,
+  enqueueAddMusic,
+  enqueueExport,
+} from '@/lib/jobRunner'
+import type { VideoFile } from '@/types'
+import { Trash2, VolumeX, Music, Download } from 'lucide-react'
 
 export const Dashboard: FC = () => {
   const { videos, currentVideo, removeVideo } = useVideoStore()
   const { jobs } = useRenderQueue()
+  const [actionMessage, setActionMessage] = useState<string | null>(null)
+
+  const handleAddMusic = (video: VideoFile) => {
+    const error = enqueueAddMusic(video)
+    setActionMessage(
+      error ?? `Add Music job queued for ${video.name} — see Render Queue.`
+    )
+  }
+
+  const actionButtons = (video: VideoFile) => (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => {
+          enqueueRemoveSilence(video)
+          setActionMessage(
+            `Remove Silence job queued for ${video.name} — see Render Queue.`
+          )
+        }}
+        className="flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-indigo-600 text-gray-200 text-sm rounded-lg transition-colors"
+        title="Remove silence"
+      >
+        <VolumeX size={16} /> Remove Silence
+      </button>
+      <button
+        onClick={() => handleAddMusic(video)}
+        className="flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-indigo-600 text-gray-200 text-sm rounded-lg transition-colors"
+        title="Add background music"
+      >
+        <Music size={16} /> Add Music
+      </button>
+      <button
+        onClick={() => {
+          enqueueExport(video)
+          setActionMessage(
+            `Export job queued for ${video.name} — see Render Queue.`
+          )
+        }}
+        className="flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-indigo-600 text-gray-200 text-sm rounded-lg transition-colors"
+        title="Export video"
+      >
+        <Download size={16} /> Export
+      </button>
+    </div>
+  )
 
   const completedJobs = jobs.filter((j) => j.status === 'completed').length
   const processingJobs = jobs.filter((j) => j.status === 'processing').length
@@ -45,6 +95,14 @@ export const Dashboard: FC = () => {
       <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
         <h2 className="text-2xl font-bold text-white mb-4">Current Video</h2>
         <VideoPreview video={currentVideo} />
+        {currentVideo && (
+          <div className="mt-4 flex items-center gap-3 flex-wrap">
+            {actionButtons(currentVideo)}
+          </div>
+        )}
+        {actionMessage && (
+          <p className="text-sm text-indigo-300 mt-3">{actionMessage}</p>
+        )}
       </div>
 
       {videos.length > 0 && (
@@ -63,6 +121,7 @@ export const Dashboard: FC = () => {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {actionButtons(video)}
                   <button
                     onClick={() => handleRemoveVideo(video.id)}
                     className="p-2 hover:bg-red-600/20 text-red-400 rounded transition-colors"

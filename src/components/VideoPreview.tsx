@@ -1,6 +1,7 @@
 import { FC, useRef, useState } from 'react'
 import { Play, Pause } from 'lucide-react'
 import type { VideoFile } from '@/types'
+import { toFileUrl } from '@/lib/files'
 
 interface VideoPreviewProps {
   video: VideoFile | null
@@ -36,10 +37,12 @@ export const VideoPreview: FC<VideoPreviewProps> = ({ video }) => {
     <div className="w-full space-y-4">
       <div className="bg-gray-900 rounded-lg p-4 border border-gray-800 relative group">
         <video
+          key={video.id}
           ref={videoRef}
-          src={video.path}
+          src={toFileUrl(video.path)}
           onPlay={handleVideoPlay}
           onPause={handleVideoPause}
+          onEnded={handleVideoPause}
           className="w-full h-96 bg-black rounded"
         />
         <button

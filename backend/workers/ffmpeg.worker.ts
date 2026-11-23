@@ -1,11 +1,42 @@
-import { ipcMain } from 'electron'
+import { ipcMain, type IpcMainInvokeEvent } from 'electron'
+import path from 'path'
 import { FFmpegService } from '../services'
 import type {
   VideoImportRequest,
   RemoveSilenceRequest,
   AddMusicRequest,
   ExportRequest,
+  ProcessResult,
 } from '@/types/ipc'
+
+/**
+ * Forward ffmpeg progress to the window that started the job.
+ * The renderer listens on 'render:progress' (see preload); jobs run
+ * one at a time in the renderer queue, so a single progress stream
+ * is unambiguous.
+ */
+function progressFor(event: IpcMainInvokeEvent) {
+  return (progress: number) => {
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('render:progress', progress)
+    }
+  }
+}
+
+function fail(event: IpcMainInvokeEvent, error: unknown): ProcessResult {
+  const message = (error as Error).message
+  if (!event.sender.isDestroyed()) {
+    event.sender.send('render:error', message)
+  }
+  return { success: false, error: message }
+}
+
+function done(event: IpcMainInvokeEvent, outputPath: string): ProcessResult {
+  if (!event.sender.isDestroyed()) {
+    event.sender.send('render:complete')
+  }
+  return { success: true, outputPath }
+}
 
 export function setupFFmpegWorkers() {
   // Import and get metadata
@@ -42,23 +73,23 @@ export function setupFFmpegWorkers() {
   // Remove silence
   ipcMain.handle(
     'ffmpeg:removeSilence',
-    async (_, request: RemoveSilenceRequest) => {
+    async (event, request: RemoveSilenceRequest): Promise<ProcessResult> => {
       try {
-        const outputPath = `${request.videoPath}.nosil.mp4`
+        // "clip.mp4" -> "clip.nosil.mp4" next to the source file,
+        // unless the caller chose the output path itself.
+        const parsed = path.parse(request.videoPath)
+        const outputPath =
+          request.outputPath ??
+          path.join(parsed.dir, `${parsed.name}.nosil.mp4`)
         await FFmpegService.removeSilence(
           request.videoPath,
           outputPath,
           request.threshold,
-          (progress) => {
-            // Send progress to renderer
-          }
+          progressFor(event)
         )
-        return { success: true }
+        return done(event, outputPath)
       } catch (error) {
-        return {
-          success: false,
-          error: (error as Error).message,
-        }
+        return fail(event, error)
       }
     }
   )
@@ -66,23 +97,18 @@ export function setupFFmpegWorkers() {
   // Add music
   ipcMain.handle(
     'ffmpeg:addMusic',
-    async (_, request: AddMusicRequest) => {
+    async (event, request: AddMusicRequest): Promise<ProcessResult> => {
       try {
         await FFmpegService.addBackgroundMusic(
           request.videoPath,
           request.musicPath,
           request.outputPath,
           request.musicVolume,
-          (progress) => {
-            // Send progress
-          }
+          progressFor(event)
         )
-        return { success: true }
+        return done(event, request.outputPath)
       } catch (error) {
-        return {
-          success: false,
-          error: (error as Error).message,
-        }
+        return fail(event, error)
       }
     }
   )
@@ -90,22 +116,17 @@ export function setupFFmpegWorkers() {
   // Export
   ipcMain.handle(
     'ffmpeg:export',
-    async (_, request: ExportRequest) => {
+    async (event, request: ExportRequest): Promise<ProcessResult> => {
       try {
         await FFmpegService.exportVideo(
           request.videoPath,
           request.outputPath,
           request.quality,
-          (progress) => {
-            // Send progress
-          }
+          progressFor(event)
         )
-        return { success: true }
+        return done(event, request.outputPath)
       } catch (error) {
-        return {
-          success: false,
-          error: (error as Error).message,
-        }
+        return fail(event, error)
       }
     }
   )

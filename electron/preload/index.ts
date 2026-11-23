@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { VideoImportResponse, RemoveSilenceRequest } from '@/types/ipc'
+import type {
+  RemoveSilenceRequest,
+  AddMusicRequest,
+  ExportRequest,
+} from '@/types/ipc'
 
 export const preload = {
   // File selection
@@ -17,11 +21,11 @@ export const preload = {
   removeSilence: (request: RemoveSilenceRequest) =>
     ipcRenderer.invoke('ffmpeg:removeSilence', request),
 
-  addMusic: (videoPath: string, musicPath: string, outputPath: string) =>
-    ipcRenderer.invoke('ffmpeg:addMusic', { videoPath, musicPath, outputPath }),
+  addMusic: (request: AddMusicRequest) =>
+    ipcRenderer.invoke('ffmpeg:addMusic', request),
 
-  exportVideo: (videoPath: string, outputPath: string, format: string, quality: string) =>
-    ipcRenderer.invoke('ffmpeg:export', { videoPath, outputPath, format, quality }),
+  exportVideo: (request: ExportRequest) =>
+    ipcRenderer.invoke('ffmpeg:export', request),
 
   // Progress tracking
   onRenderProgress: (callback: (progress: number) => void) =>

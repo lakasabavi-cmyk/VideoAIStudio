@@ -1,3 +1,10 @@
+import type {
+  RemoveSilenceRequest,
+  AddMusicRequest,
+  ExportRequest,
+  ProcessResult,
+} from './ipc'
+
 export interface ElectronAPI {
   selectVideo: () => Promise<{
     success: boolean
@@ -30,9 +37,9 @@ export interface ElectronAPI {
     error?: string
   }>
   
-  removeSilence: (request: any) => Promise<any>
-  addMusic: (videoPath: string, musicPath: string, outputPath: string) => Promise<any>
-  exportVideo: (videoPath: string, outputPath: string, format: string, quality: string) => Promise<any>
+  removeSilence: (request: RemoveSilenceRequest) => Promise<ProcessResult>
+  addMusic: (request: AddMusicRequest) => Promise<ProcessResult>
+  exportVideo: (request: ExportRequest) => Promise<ProcessResult>
   
   onRenderProgress: (callback: (progress: number) => void) => void
   onRenderComplete: (callback: () => void) => void
