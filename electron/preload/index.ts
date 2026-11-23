@@ -14,6 +14,7 @@ import type {
   TransformRequest,
   TimelineThumbsRequest,
   ComposeRequest,
+  ThumbnailsRequest,
 } from '@/types/ipc'
 
 export const preload = {
@@ -71,6 +72,9 @@ export const preload = {
 
   getMediaDuration: (filePath: string) =>
     ipcRenderer.invoke('media:duration', { filePath }),
+
+  extractThumbnails: (request: ThumbnailsRequest) =>
+    ipcRenderer.invoke('media:thumbnails', request),
 
   getLogTail: () => ipcRenderer.invoke('log:getTail'),
   openLogFile: () => ipcRenderer.invoke('log:openFile'),

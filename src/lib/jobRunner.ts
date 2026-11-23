@@ -187,10 +187,11 @@ export function enqueueTimeline(video: VideoFile) {
 }
 
 /**
- * Export the timeline composition: trimmed video clips in order,
- * their own audio at originalVolume, and the added-audio clips
- * mixed over the top. Returns an error message instead of
- * enqueueing when the timeline is empty.
+ * Build a movie from the timeline: video clips at their timeline
+ * offsets (gaps render black), Smart Concat flags passed through,
+ * and every audio-lane clip resolved to an absolute start time.
+ * Returns an error message instead of enqueueing when the timeline
+ * has no video clips.
  */
 export function enqueueCompose(timeline: {
   videoClips: {
@@ -202,9 +203,18 @@ export function enqueueCompose(timeline: {
     height: number
     trimStart: number
     trimEnd: number
+    offset: number
+    dropFirstFrame: boolean
   }[]
-  audioClips: { path: string; volume: number }[]
-  audioStartOffset: number
+  audioClips: {
+    path: string
+    volume: number
+    kind: 'voice' | 'music' | 'sfx'
+    trimStart: number
+    trimEnd: number
+    duration: number
+  }[]
+  laneOffsets: Record<'voice' | 'music' | 'sfx', number>
   originalVolume: number
 }): string | null {
   if (timeline.videoClips.length === 0) {
@@ -224,18 +234,30 @@ export function enqueueCompose(timeline: {
     size: 0,
     createdAt: new Date(),
   }
+  // Resolve each audio clip to an absolute start: its lane offset
+  // plus the kept lengths of the clips before it in the same lane.
+  const laneCursor = { ...timeline.laneOffsets }
+  const audioClips = timeline.audioClips.map((a) => {
+    const startAt = laneCursor[a.kind] ?? 0
+    laneCursor[a.kind] = startAt + Math.max(0, a.trimEnd - a.trimStart)
+    return {
+      path: a.path,
+      volume: a.volume / 100,
+      startAtSeconds: startAt,
+      startSeconds: a.trimStart,
+      endSeconds: a.trimEnd,
+    }
+  })
   const job = baseJob('compose', pseudo, {
     compose: {
       clips: timeline.videoClips.map((c) => ({
         path: c.path,
         startSeconds: c.trimStart,
         endSeconds: c.trimEnd,
+        offsetSeconds: c.offset,
+        dropFirstFrame: c.dropFirstFrame,
       })),
-      audioClips: timeline.audioClips.map((a) => ({
-        path: a.path,
-        volume: a.volume / 100,
-      })),
-      audioStartOffset: timeline.audioStartOffset,
+      audioClips,
       originalVolume: timeline.originalVolume / 100,
     },
   })
@@ -373,7 +395,6 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
       return api.composeTimeline({
         clips: compose.clips,
         audioClips: compose.audioClips,
-        audioStartOffset: compose.audioStartOffset,
         originalVolume: compose.originalVolume,
         outputPath: withSuffix(job.inputPath, '.timeline'),
       })

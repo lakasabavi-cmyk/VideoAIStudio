@@ -18,6 +18,7 @@ import type {
   TransformRequest,
   TimelineThumbsRequest,
   ComposeRequest,
+  ThumbnailsRequest,
   ProcessResult,
 } from '@/types/ipc'
 
@@ -276,6 +277,24 @@ export function setupFFmpegWorkers() {
         return done(event, request.outputPath)
       } catch (error) {
         return fail(event, error)
+      }
+    }
+  )
+
+  // Filmstrip thumbnails for the timeline editor (cached)
+  ipcMain.handle(
+    'media:thumbnails',
+    async (_, request: ThumbnailsRequest) => {
+      try {
+        const paths = await FFmpegService.extractThumbnails(
+          request.videoPath,
+          request.startSeconds,
+          request.endSeconds,
+          request.count
+        )
+        return { success: true, data: paths }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
       }
     }
   )

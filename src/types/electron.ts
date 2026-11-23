@@ -15,6 +15,7 @@ import type {
   TransformRequest,
   TimelineThumbsRequest,
   ComposeRequest,
+  ThumbnailsRequest,
   ProcessResult,
 } from './ipc'
 
@@ -62,6 +63,11 @@ export interface ElectronAPI {
   transformVideo: (request: TransformRequest) => Promise<ProcessResult>
   timelineThumbnails: (request: TimelineThumbsRequest) => Promise<ProcessResult>
   composeTimeline: (request: ComposeRequest) => Promise<ProcessResult>
+  extractThumbnails: (request: ThumbnailsRequest) => Promise<{
+    success: boolean
+    data?: string[]
+    error?: string
+  }>
   selectFiles: (kind: 'video' | 'audio') => Promise<{
     success: boolean
     data?: { filePath: string; fileName: string; fileSize: number }[]

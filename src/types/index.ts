@@ -103,9 +103,20 @@ export interface RenderJobParams {
   transform?: 'rot90' | 'rot-90' | 'rot180' | 'flipH' | 'flipV'
   /** Timeline composition snapshot (see composeTimeline). */
   compose?: {
-    clips: { path: string; startSeconds: number; endSeconds: number }[]
-    audioClips: { path: string; volume: number }[]
-    audioStartOffset: number
+    clips: {
+      path: string
+      startSeconds: number
+      endSeconds: number
+      offsetSeconds: number
+      dropFirstFrame?: boolean
+    }[]
+    audioClips: {
+      path: string
+      volume: number
+      startAtSeconds: number
+      startSeconds: number
+      endSeconds: number
+    }[]
     originalVolume: number
   }
   quality?: 'low' | 'medium' | 'high'

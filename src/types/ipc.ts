@@ -156,13 +156,30 @@ export interface ProcessResult {
 }
 
 export interface ComposeRequest {
-  /** Video clips in timeline order; each is trimmed to [start, end]. */
-  clips: { path: string; startSeconds: number; endSeconds: number }[]
-  /** Added audio clips, laid end to end starting at audioStartOffset. */
-  audioClips: { path: string; volume: number }[]
-  /** Seconds into the timeline where the added-audio track starts. */
-  audioStartOffset: number
+  /** Video clips with absolute timeline offsets (seconds). */
+  clips: {
+    path: string
+    startSeconds: number
+    endSeconds: number
+    offsetSeconds: number
+    dropFirstFrame?: boolean
+  }[]
+  /** Added audio clips at absolute start times, pre-trimmed. */
+  audioClips: {
+    path: string
+    volume: number
+    startAtSeconds: number
+    startSeconds: number
+    endSeconds: number
+  }[]
   /** Volume of the clips' own audio, 0-1 (0 = muted). */
   originalVolume: number
   outputPath: string
+}
+
+export interface ThumbnailsRequest {
+  videoPath: string
+  startSeconds: number
+  endSeconds: number
+  count: number
 }

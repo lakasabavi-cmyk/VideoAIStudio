@@ -585,18 +585,31 @@ export class FFmpegService {
   }
 
   /**
-   * Compose a timeline: video clips (each trimmed to [start, end])
-   * are normalized to the first clip and concatenated; the clips'
-   * own audio runs underneath at originalVolume; the added audio
-   * clips are laid end to end starting at audioStartOffset and
-   * mixed over the top. Segment audio is locked to the segment's
-   * video length, the same rule the merge uses.
+   * Compose a timeline (v2): video clips sit at absolute offsets
+   * on the track; gaps between them (left by non-ripple trims or
+   * deletions) render as black + silence. A clip flagged
+   * dropFirstFrame starts one frame in (Smart Concat for
+   * last-frame chains). The clips' own audio runs at
+   * originalVolume; added audio clips (Voice / Music / SFX lanes,
+   * already resolved to absolute start times and trims by the
+   * caller) are mixed over the top with adelay + amix.
    */
   static async composeTimeline(
     request: {
-      clips: { path: string; startSeconds: number; endSeconds: number }[]
-      audioClips: { path: string; volume: number }[]
-      audioStartOffset: number
+      clips: {
+        path: string
+        startSeconds: number
+        endSeconds: number
+        offsetSeconds: number
+        dropFirstFrame?: boolean
+      }[]
+      audioClips: {
+        path: string
+        volume: number
+        startAtSeconds: number
+        startSeconds: number
+        endSeconds: number
+      }[]
       originalVolume: number
       outputPath: string
     },
@@ -613,60 +626,98 @@ export class FFmpegService {
     const targetFps = target.fps > 0 ? Math.round(target.fps) : 30
     const originalVolume = Math.max(0, Math.min(1, request.originalVolume))
 
-    const filters: string[] = []
-    const concatInputs: string[] = []
-    let outputDuration = 0
-    request.clips.forEach((clip, i) => {
-      const meta = metas[i]
-      const start = Math.max(0, Math.min(clip.startSeconds, meta.duration))
+    // Flatten the track into segments: gaps and clips in time order.
+    interface Segment {
+      kind: 'gap' | 'clip'
+      length: number
+      clipIndex?: number
+      start?: number
+      end?: number
+    }
+    const ordered = request.clips
+      .map((clip, index) => ({ clip, index }))
+      .sort((a, b) => a.clip.offsetSeconds - b.clip.offsetSeconds)
+    const segments: Segment[] = []
+    let cursor = 0
+    for (const { clip, index } of ordered) {
+      const meta = metas[index]
+      let start = Math.max(0, Math.min(clip.startSeconds, meta.duration))
+      if (clip.dropFirstFrame) {
+        const clipFps = meta.fps > 0 ? meta.fps : targetFps
+        start += 1 / clipFps
+      }
       const end = Math.max(
         start + 0.1,
         Math.min(clip.endSeconds, meta.duration || clip.endSeconds)
       )
-      const length = end - start
-      filters.push(
-        `[${i}:v]trim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
-          `setpts=PTS-STARTPTS,scale=${target.width}:${target.height},` +
-          `format=yuv420p,setsar=1[v${i}]`
-      )
-      if (meta.audioCodec) {
+      const gap = clip.offsetSeconds - cursor
+      if (gap > 0.05) segments.push({ kind: 'gap', length: gap })
+      segments.push({ kind: 'clip', length: end - start, clipIndex: index, start, end })
+      cursor = Math.max(cursor, clip.offsetSeconds) + (end - start)
+    }
+    const outputDuration = cursor
+
+    const filters: string[] = []
+    const concatInputs: string[] = []
+    segments.forEach((segment, s) => {
+      if (segment.kind === 'gap') {
         filters.push(
-          `[${i}:a]atrim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
-            `asetpts=PTS-STARTPTS,aresample=48000,` +
-            `aformat=channel_layouts=stereo,volume=${originalVolume.toFixed(3)},` +
-            `apad,atrim=duration=${length.toFixed(3)}[a${i}]`
+          `color=c=black:s=${target.width}x${target.height}:r=${targetFps},` +
+            `trim=duration=${segment.length.toFixed(3)},setpts=PTS-STARTPTS,` +
+            `format=yuv420p[gv${s}]`
         )
-      } else {
         filters.push(
           `anullsrc=channel_layout=stereo:sample_rate=48000,` +
-            `atrim=duration=${length.toFixed(3)}[a${i}]`
+            `atrim=duration=${segment.length.toFixed(3)}[ga${s}]`
         )
+      } else {
+        const i = segment.clipIndex as number
+        const meta = metas[i]
+        const start = segment.start as number
+        const end = segment.end as number
+        filters.push(
+          `[${i}:v]trim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
+            `setpts=PTS-STARTPTS,scale=${target.width}:${target.height},` +
+            `format=yuv420p,setsar=1[gv${s}]`
+        )
+        if (meta.audioCodec) {
+          filters.push(
+            `[${i}:a]atrim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
+              `asetpts=PTS-STARTPTS,aresample=48000,` +
+              `aformat=channel_layouts=stereo,volume=${originalVolume.toFixed(3)},` +
+              `apad,atrim=duration=${segment.length.toFixed(3)}[ga${s}]`
+          )
+        } else {
+          filters.push(
+            `anullsrc=channel_layout=stereo:sample_rate=48000,` +
+              `atrim=duration=${segment.length.toFixed(3)}[ga${s}]`
+          )
+        }
       }
-      concatInputs.push(`[v${i}][a${i}]`)
-      outputDuration += length
+      concatInputs.push(`[gv${s}][ga${s}]`)
     })
     filters.push(
-      `${concatInputs.join('')}concat=n=${request.clips.length}:v=1:a=1[cv][ca]`
+      `${concatInputs.join('')}concat=n=${segments.length}:v=1:a=1[cv][ca]`
     )
     filters.push(`[cv]fps=${targetFps}[outv]`)
 
-    // Added-audio bed: clips end to end from the start offset.
+    // Added-audio bed: every clip at its absolute start time.
     let audioOut = '[ca]'
     if (request.audioClips.length > 0) {
       const bedLabels: string[] = []
-      let cursor = Math.max(0, request.audioStartOffset)
       for (let k = 0; k < request.audioClips.length; k++) {
         const audio = request.audioClips[k]
         const inputIndex = request.clips.length + k
-        const duration = await FFmpegService.getMediaDuration(audio.path)
-        const delayMs = Math.round(cursor * 1000)
+        const delayMs = Math.round(Math.max(0, audio.startAtSeconds) * 1000)
         const volume = Math.max(0, Math.min(1, audio.volume))
+        const start = Math.max(0, audio.startSeconds)
+        const end = Math.max(start + 0.1, audio.endSeconds)
         filters.push(
-          `[${inputIndex}:a]aresample=48000,aformat=channel_layouts=stereo,` +
+          `[${inputIndex}:a]atrim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
+            `asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo,` +
             `volume=${volume.toFixed(3)},adelay=${delayMs}[b${k}]`
         )
         bedLabels.push(`[b${k}]`)
-        cursor += duration
       }
       if (bedLabels.length === 1) {
         filters.push(`${bedLabels[0]}anull[bed]`)
@@ -712,6 +763,48 @@ export class FFmpegService {
         .on('error', reject)
         .run()
     })
+  }
+
+  /**
+   * Extract a strip of small JPEG thumbnails across [start, end]
+   * of a video for the timeline filmstrip. Results are cached
+   * under the app's userData folder, keyed by path + range +
+   * count, so re-renders of the editor do not re-extract.
+   */
+  static async extractThumbnails(
+    videoPath: string,
+    startSeconds: number,
+    endSeconds: number,
+    count: number
+  ): Promise<string[]> {
+    const { createHash } = await import('crypto')
+    const { app } = await import('electron')
+    const key = createHash('sha1')
+      .update(`${videoPath}|${startSeconds.toFixed(2)}|${endSeconds.toFixed(2)}|${count}`)
+      .digest('hex')
+      .slice(0, 16)
+    const dir = path.join(app.getPath('userData'), 'thumb-cache', key)
+    const wanted = Array.from(
+      { length: count },
+      (_, i) => path.join(dir, `f${String(i).padStart(2, '0')}.jpg`)
+    )
+    if (wanted.every((p) => fs.existsSync(p))) return wanted
+    fs.mkdirSync(dir, { recursive: true })
+    const length = Math.max(0.2, endSeconds - startSeconds)
+    const fpsRate = count / length
+    await new Promise<void>((resolve, reject) => {
+      const command = FFmpegService.trackCommand(ffmpeg(videoPath))
+      command
+        .seekInput(Math.max(0, startSeconds))
+        .duration(length)
+        .videoFilters(`fps=${fpsRate.toFixed(4)},scale=144:80:force_original_aspect_ratio=increase,crop=144:80`)
+        .outputOptions(['-q:v', '5'])
+        .output(path.join(dir, 'f%02d.jpg'))
+        .on('end', () => resolve())
+        .on('error', reject)
+        .run()
+    })
+    return wanted.filter((p) => fs.existsSync(p))
   }
 
   /**
