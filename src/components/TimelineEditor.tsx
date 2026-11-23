@@ -154,17 +154,22 @@ const Waveform: FC<{ clip: TimelineAudioClip; color: string }> = ({
   color,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const peaksRef = useRef<number[] | null>(null)
   const kept = keptAudio(clip)
   const buckets = Math.max(16, Math.min(240, Math.round(kept * 12)))
   const key = `${clip.path}|${clip.trimStart.toFixed(1)}|${clip.trimEnd.toFixed(1)}|${buckets}`
   useEffect(() => {
     let alive = true
     let retryTimer: ReturnType<typeof setTimeout> | undefined
-    const draw = (peaks: number[]) => {
+    peaksRef.current = null
+    const draw = () => {
+      const peaks = peaksRef.current
       const canvas = canvasRef.current
-      if (!canvas) return
+      if (!peaks || !canvas) return
       const w = canvas.clientWidth
       const h = canvas.clientHeight
+      // Zero size means the block is not laid out yet — the
+      // ResizeObserver below redraws when it gets its size.
       if (w === 0 || h === 0) return
       canvas.width = w
       canvas.height = h
@@ -183,6 +188,15 @@ const Waveform: FC<{ clip: TimelineAudioClip; color: string }> = ({
         ctx.fillRect(i * barW, (h - bh) / 2, Math.max(1, barW - 0.5), bh)
       })
     }
+    // Redraw whenever the block is resized (first layout, zoom
+    // changes): a draw that lands before layout used to be
+    // lost for the whole session, leaving the block flat.
+    const canvas = canvasRef.current
+    const observer =
+      canvas && typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => draw())
+        : null
+    if (canvas && observer) observer.observe(canvas)
     const fetchPeaks = async (isRetry: boolean) => {
       try {
         const result = await window.electronAPI.extractWaveformPeaks({
@@ -192,12 +206,23 @@ const Waveform: FC<{ clip: TimelineAudioClip; color: string }> = ({
           buckets,
         })
         if (!alive) return
-        if (result.success && result.data) {
-          draw(result.data)
+        // All-zero peaks with a success flag mean the decode
+        // produced nothing (the service returns zeros when it
+        // cannot decode) — treat it like a failure and retry
+        // once instead of drawing flat for the whole session.
+        const usable =
+          result.success &&
+          result.data &&
+          result.data.some((p) => p > 0)
+        if (usable) {
+          peaksRef.current = result.data ?? null
+          draw()
         } else if (!isRetry) {
-          // One quiet retry — a transient decode failure should
-          // not leave the block flat for the whole session.
           retryTimer = setTimeout(() => void fetchPeaks(true), 1500)
+        } else if (result.success && result.data) {
+          // Second all-zero answer: the range really is silent.
+          peaksRef.current = result.data
+          draw()
         }
       } catch {
         if (alive && !isRetry) {
@@ -208,6 +233,7 @@ const Waveform: FC<{ clip: TimelineAudioClip; color: string }> = ({
     const timer = setTimeout(() => void fetchPeaks(false), 300)
     return () => {
       alive = false
+      observer?.disconnect()
       clearTimeout(timer)
       if (retryTimer) clearTimeout(retryTimer)
     }
