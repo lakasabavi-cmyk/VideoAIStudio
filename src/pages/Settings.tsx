@@ -1,6 +1,7 @@
 import { FC, useState } from 'react'
 import { Save, Check } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { ESRGAN_MODEL_SCALES } from '@/lib/jobRunner'
 import { LogViewer } from '@/components/LogViewer'
 import type { ProjectSettings } from '@/types'
 
@@ -313,9 +314,21 @@ export const Settings: FC = () => {
                 <label className="text-gray-300 text-sm">ESRGAN model</label>
                 <select
                   value={draft.esrganModel}
-                  onChange={(e) =>
-                    setDraft({ ...draft, esrganModel: e.target.value })
-                  }
+                  onChange={(e) => {
+                    const value = e.target.value
+                    // A picked model fixes its own scale (25/11/2026:
+                    // "2x" buttons + a 4x model silently ran 4x).
+                    // Sync the stored scale so the buttons, the
+                    // saved settings and the job all agree.
+                    const native = ESRGAN_MODEL_SCALES[value]
+                    setDraft({
+                      ...draft,
+                      esrganModel: value,
+                      ...(native !== undefined
+                        ? { esrganScale: native }
+                        : {}),
+                    })
+                  }}
                   className="w-full mt-2 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
                 >
                   <option value="">Auto — model follows the scale below</option>
@@ -343,6 +356,12 @@ export const Settings: FC = () => {
                   is not in the models folder, the job stops right away
                   with a clear message instead of failing mid-run.
                 </p>
+                {draft.esrganModel !== '' &&
+                  draft.esrganModel !== 'custom' && (
+                    <p className="text-xs text-indigo-300 mt-2">
+                      Scale: {ESRGAN_MODEL_SCALES[draft.esrganModel] ?? draft.esrganScale}x — fixed by the picked model.
+                    </p>
+                  )}
                 {(draft.esrganModel === '' || draft.esrganModel === 'custom') && (
                   <>
                     <label className="block text-gray-300 text-sm mt-4">Scale</label>

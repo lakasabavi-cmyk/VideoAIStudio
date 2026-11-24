@@ -494,3 +494,30 @@ from `media:duration` (`getMediaDuration`), because
   STAGE line with the remedy instead of dropping silently.
   Hung's saved setting still says large-v3 — he must
   switch the dropdown to medium once.
+  v0.3.9: the ESRGAN scale/model mismatch, found by Hung
+  25/11/2026. The Settings scale buttons (2x/3x/4x) only
+  show for Auto/Custom models; picking a built-in model
+  hid them but left the stored scale at its old value, so
+  the UI last showed "2x" while the job silently ran 4x
+  (resolveEsrganModel lets the model fix its own scale)
+  and produced a 2944x5120 video whose frames after the
+  first were pure black — in 01:55 — yet the job reported
+  "done", because the runner only checked that *some*
+  frames were produced. Fixes: (1) picking a built-in
+  model now also sets the stored scale to that model's
+  scale, and Settings shows the effective scale as a
+  read-only line ("Scale: 4x — fixed by the picked
+  model"); (2) the service validates a known model
+  against the job scale up front and throws on a
+  mismatch; (3) new backend/services/frameCheck.ts
+  verifies every RIFE/ESRGAN stage output — exact frame
+  count, first-frame dimensions from the PNG header
+  against input x scale, and a blank check (sampled
+  frames under 0.5% of raw RGB bytes; 3 of 5 samples
+  must be blank to fail, so a brief fade-to-black does
+  not trip it). Verified on this VM with Hung's actual
+  broken frames: the mixed dir (1 good + 4 black) now
+  throws "frames look blank", and good dirs pass. Note:
+  the black frames themselves are still unexplained —
+  the checks only make the next occurrence fail loudly
+  with the stage named, instead of a corrupt "done".

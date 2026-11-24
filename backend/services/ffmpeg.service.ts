@@ -10,6 +10,7 @@ import { createHash } from 'crypto'
 import type { UpscaleRequest } from '@/types/ipc'
 import { LogService } from './log.service'
 import { SystemService } from './system.service'
+import { verifyFrameDir } from './frameCheck'
 
 /**
  * Resolve a bundled binary path.
@@ -1397,6 +1398,25 @@ export class FFmpegService {
     }
     const scale = request.scale ?? 4
     const model = request.model ?? 'realesrgan-x4plus'
+    // A built-in model only works at its own scale. The job runner
+    // already resolves this (see resolveEsrganModel), but a stale or
+    // hand-built request must not silently run the wrong scale:
+    // 25/11/2026 a "2x" job with a 4x model ran 4x and produced
+    // black frames, yet reported "done".
+    const ESRGAN_MODEL_SCALES: Record<string, number> = {
+      'realesr-animevideov3-x2': 2,
+      'realesr-animevideov3-x3': 3,
+      'realesr-animevideov3-x4': 4,
+      'realesrgan-x4plus': 4,
+      'realesrgan-x4plus-anime': 4,
+      'realesrnet-x4plus': 4,
+    }
+    const nativeScale = ESRGAN_MODEL_SCALES[model]
+    if (nativeScale !== undefined && nativeScale !== scale) {
+      throw new Error(
+        `Real-ESRGAN model "${model}" is a ${nativeScale}x model but the job scale is ${scale}x — pick a matching scale and model in Settings.`
+      )
+    }
     // Optional sharpen pass in the rebuild encode — counters
     // the plastic over-smoothing of the light video models.
     const SHARPEN_FILTERS = {
@@ -1542,6 +1562,17 @@ export class FFmpegService {
           .filter((f) => f.endsWith('.png')).length
       }
 
+      // A tool that writes black frames must fail here, not at the
+      // end with a corrupt video marked "done".
+      if (rife) {
+        verifyFrameDir(rifeDir, {
+          expectedCount: frameCount * rifeMultiplier,
+          expectedWidth: metadata.width,
+          expectedHeight: metadata.height,
+          stage: 'RIFE',
+        })
+      }
+
       FFmpegService.throwIfCancelled(cancelEpoch)
 
       LogService.log(
@@ -1573,6 +1604,13 @@ export class FFmpegService {
         stage: 'Upscale',
         toolName: 'Real-ESRGAN',
         onProgress,
+      })
+
+      verifyFrameDir(upscaledDir, {
+        expectedCount: finalFrameCount,
+        expectedWidth: metadata.width * scale,
+        expectedHeight: metadata.height * scale,
+        stage: 'Real-ESRGAN',
       })
 
       FFmpegService.throwIfCancelled(cancelEpoch)
