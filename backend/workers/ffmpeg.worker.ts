@@ -6,6 +6,7 @@ import {
   SystemService,
   LogService,
   TranscriptService,
+  uniqueOutputPath,
 } from '../services'
 import type {
   VideoImportRequest,
@@ -489,17 +490,32 @@ export function setupFFmpegWorkers() {
     'ffmpeg:upscale',
     async (event, request: UpscaleRequest): Promise<ProcessResult> => {
       try {
+        // Never overwrite a previous render with the same derived
+        // name: a re-run with identical settings used to destroy
+        // the earlier output (25/11/2026: Tile 400 overwrote the
+        // good Tile 256 file). The resolved path is what the
+        // service writes and what the queue reports.
+        const outputPath = uniqueOutputPath(request.outputPath)
+        if (outputPath !== request.outputPath) {
+          LogService.log(
+            'upscale',
+            `output exists, writing to ${path.basename(outputPath)} instead`
+          )
+        }
         if (request.method === 'realesrgan') {
-          await FFmpegService.upscaleRealEsrgan(request, progressFor(event))
+          await FFmpegService.upscaleRealEsrgan(
+            { ...request, outputPath },
+            progressFor(event)
+          )
         } else {
           await FFmpegService.upscaleLanczos(
             request.videoPath,
-            request.outputPath,
+            outputPath,
             request.targetHeight ?? 1080,
             progressFor(event)
           )
         }
-        return done(event, request.outputPath)
+        return done(event, outputPath)
       } catch (error) {
         return fail(event, error)
       }

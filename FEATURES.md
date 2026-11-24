@@ -521,3 +521,15 @@ from `media:duration` (`getMediaDuration`), because
   the black frames themselves are still unexplained —
   the checks only make the next occurrence fail loudly
   with the stage named, instead of a corrupt "done".
+  v0.3.10: never silently overwrite an upscale output. The
+  output filename is derived from input + scale + RIFE, so
+  re-running with the same settings reuses the same name —
+  25/11/2026 the Tile 400 re-run overwrote the good Tile
+  256 file (36 minutes of work) with its black video, and
+  the loss was only noticed afterwards. The upscale IPC
+  handler now resolves the output through
+  backend/services/outputPath.ts first: an existing file
+  gets _2, then _3, and the resolved name is what the
+  service writes, the log reports, and the queue shows.
+  Only the upscale path is guarded; the other quick jobs
+  keep their plain derived names.
