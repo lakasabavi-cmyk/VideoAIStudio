@@ -33,6 +33,7 @@ import type {
   TranscriptCutsRequest,
   BurnSubtitlesRequest,
   FrameExtractRequest,
+  FrameCompareRequest,
   ColorGradeRequest,
   ProcessResult,
 } from '@/types/ipc'
@@ -364,6 +365,22 @@ export function setupFFmpegWorkers() {
           request.rangeStartSeconds
         )
         return { success: true, data: saved }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
+      }
+    }
+  )
+
+  // Frame compare: same-timestamp frame from two videos
+  ipcMain.handle(
+    'ffmpeg:frameCompare',
+    async (_, request: FrameCompareRequest) => {
+      try {
+        const result = await FFmpegService.getFrameCompare(
+          request.firstPath,
+          request.secondPath
+        )
+        return { success: true, data: result }
       } catch (error) {
         return { success: false, error: (error as Error).message }
       }

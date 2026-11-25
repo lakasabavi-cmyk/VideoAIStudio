@@ -7,7 +7,7 @@ import os from 'os'
 import path from 'path'
 import { spawn } from 'child_process'
 import { createHash } from 'crypto'
-import type { UpscaleRequest } from '@/types/ipc'
+import type { UpscaleRequest, FrameCompareResult } from '@/types/ipc'
 import { LogService } from './log.service'
 import { SystemService } from './system.service'
 import { verifyFrameDir, readPngDimensions } from './frameCheck'
@@ -1463,6 +1463,86 @@ export class FFmpegService {
       }
     }
     return outputPath
+  }
+
+  /**
+   * Frame compare for two videos (v0.4.3, Render Queue): extract
+   * the frame at the SAME timestamp from both — half the SHORTER
+   * video's duration, so the moment exists in both — and save
+   * both PNGs into a "frame compare" folder next to the first
+   * video. Returns the two frame paths plus both sizes and the
+   * timestamp used.
+   */
+  static async getFrameCompare(
+    firstPath: string,
+    secondPath: string
+  ): Promise<FrameCompareResult> {
+    const firstMeta = await FFmpegService.getVideoMetadata(firstPath)
+    const secondMeta = await FFmpegService.getVideoMetadata(secondPath)
+    const timeSeconds =
+      Math.min(firstMeta.duration, secondMeta.duration) / 2
+    const dir = path.join(path.dirname(firstPath), 'frame compare')
+    fs.mkdirSync(dir, { recursive: true })
+    const base = (p: string) => path.basename(p).replace(/\.[^.]+$/, '')
+    const firstFrame = path.join(dir, `${base(firstPath)}_compare_A.png`)
+    const secondFrame = path.join(dir, `${base(secondPath)}_compare_B.png`)
+    await FFmpegService.extractFrameAccurate(firstPath, timeSeconds, firstFrame)
+    await FFmpegService.extractFrameAccurate(
+      secondPath,
+      timeSeconds,
+      secondFrame
+    )
+    return {
+      firstFrame,
+      secondFrame,
+      timeSeconds,
+      firstWidth: firstMeta.width,
+      firstHeight: firstMeta.height,
+      secondWidth: secondMeta.width,
+      secondHeight: secondMeta.height,
+    }
+  }
+
+  /**
+   * Extract one frame at an exact timestamp. Same short-window
+   * trick as extractFrameAt's 'last' branch: fast-seek to 0.7s
+   * before the timestamp, decode the short window, keep the last
+   * frame — the frame really is the one at that second, which
+   * matters when two videos are compared (a keyframe seek alone
+   * could land each video on a different moment).
+   */
+  private static async extractFrameAccurate(
+    videoPath: string,
+    timeSeconds: number,
+    outputPath: string
+  ): Promise<void> {
+    const winStart = Math.max(0, timeSeconds - 0.7)
+    const winLen = Math.max(0.05, timeSeconds - winStart)
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'videoai-frame-'))
+    try {
+      await new Promise<void>((resolve, reject) => {
+        FFmpegService.trackCommand(ffmpeg(videoPath))
+          .seekInput(winStart)
+          .duration(winLen)
+          .outputOptions(['-vsync', 'vfr', '-q:v', '2'])
+          .output(path.join(tmpDir, 'f%04d.png'))
+          .on('end', () => resolve())
+          .on('error', reject)
+          .run()
+      })
+      const frames = fs
+        .readdirSync(tmpDir)
+        .filter((f) => f.endsWith('.png'))
+        .sort()
+      if (frames.length === 0) {
+        throw new Error(
+          `No frame found at ${timeSeconds.toFixed(2)}s in ${path.basename(videoPath)}`
+        )
+      }
+      fs.copyFileSync(path.join(tmpDir, frames[frames.length - 1]), outputPath)
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
   }
 
   static async extractThumbnails(

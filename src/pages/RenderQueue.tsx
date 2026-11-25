@@ -1,8 +1,10 @@
-import { FC, useEffect, useState } from 'react'
-import { Trash2, CheckCircle, AlertCircle, Loader, Ban, FileX2 } from 'lucide-react'
+import { FC, useEffect, useRef, useState } from 'react'
+import { Trash2, CheckCircle, AlertCircle, Loader, Ban, FileX2, Columns2, X } from 'lucide-react'
 import { useRenderQueue } from '@/stores/renderQueue'
 import { cancelCurrentJob } from '@/lib/jobRunner'
+import { toFileUrl } from '@/lib/files'
 import type { RenderJobKind } from '@/types'
+import type { FrameCompareResult } from '@/types/ipc'
 
 const KIND_LABELS: Record<RenderJobKind, string> = {
   'remove-silence': 'Remove Silence',
@@ -52,6 +54,92 @@ export const RenderQueue: FC = () => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [anyProcessing])
+
+  // Frame compare (v0.4.3): tick two completed jobs, compare the
+  // same-timestamp frame from both outputs, preview below the list.
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [compare, setCompare] = useState<{
+    firstJobId: string
+    secondJobId: string
+    firstLabel: string
+    secondLabel: string
+    result: FrameCompareResult | null
+    loading: boolean
+    error: string | null
+  } | null>(null)
+  const compareRef = useRef<HTMLDivElement>(null)
+
+  // A job can be compared when it finished and produced a video file.
+  const isVideoOutput = (job: (typeof jobs)[number]) =>
+    !!job.outputPath && /\.(mp4|webm|mov)$/i.test(job.outputPath)
+  const canCompare = (job: (typeof jobs)[number]) =>
+    job.status === 'completed' && isVideoOutput(job)
+
+  const toggleSelect = (job: (typeof jobs)[number]) => {
+    setSelectedIds((cur) => {
+      if (cur.includes(job.id)) return cur.filter((id) => id !== job.id)
+      if (cur.length >= 2) return cur // max two; the 3rd box is disabled
+      return [...cur, job.id]
+    })
+  }
+
+  // Drop a selection / compare whose job was removed (or cleared).
+  useEffect(() => {
+    setSelectedIds((cur) => {
+      const kept = cur.filter((id) => jobs.some((j) => j.id === id))
+      return kept.length === cur.length ? cur : kept
+    })
+    setCompare((cur) => {
+      if (!cur) return cur
+      const alive =
+        jobs.some((j) => j.id === cur.firstJobId) &&
+        jobs.some((j) => j.id === cur.secondJobId)
+      return alive ? cur : null
+    })
+  }, [jobs])
+
+  const handleCompare = async () => {
+    const baseName = (p: string) => p.split(/[\\/]/).pop() ?? p
+    const [first, second] = selectedIds
+      .map((id) => jobs.find((j) => j.id === id))
+      .filter(
+        (j): j is (typeof jobs)[number] => !!j && !!j.outputPath
+      )
+    if (!first || !second || !first.outputPath || !second.outputPath) return
+    setCompare({
+      firstJobId: first.id,
+      secondJobId: second.id,
+      firstLabel: `${KIND_LABELS[first.kind]} — ${baseName(first.outputPath)}`,
+      secondLabel: `${KIND_LABELS[second.kind]} — ${baseName(second.outputPath)}`,
+      result: null,
+      loading: true,
+      error: null,
+    })
+    const result = await window.electronAPI.getFrameCompare({
+      firstPath: first.outputPath,
+      secondPath: second.outputPath,
+    })
+    setCompare((cur) => {
+      if (!cur || cur.firstJobId !== first.id || cur.secondJobId !== second.id)
+        return cur
+      if (!result.success || !result.data) {
+        return {
+          ...cur,
+          loading: false,
+          error: result.error ?? 'Could not extract compare frames.',
+        }
+      }
+      return { ...cur, loading: false, result: result.data }
+    })
+    window.setTimeout(
+      () =>
+        compareRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        }),
+      50
+    )
+  }
 
   // Two-step delete of a job's output file (the trimmed /
   // split / rendered leftovers): first click arms, second
@@ -139,6 +227,30 @@ export const RenderQueue: FC = () => {
         <p className="text-sm text-indigo-300">{fileMessage}</p>
       )}
 
+      {selectedIds.length > 0 && (
+        <div className="bg-gray-900 rounded-lg px-4 py-3 border border-indigo-800 flex items-center justify-between gap-4">
+          <p className="text-sm text-gray-300">
+            Selected {selectedIds.length}/2 jobs to compare
+            {selectedIds.length < 2 ? ' — tick one more job' : ''}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds([])}
+              className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 text-white rounded transition-colors"
+            >
+              Clear selection
+            </button>
+            <button
+              onClick={() => void handleCompare()}
+              disabled={selectedIds.length !== 2}
+              className="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded transition-colors flex items-center gap-2"
+            >
+              <Columns2 size={16} /> Compare
+            </button>
+          </div>
+        </div>
+      )}
+
       {jobs.length === 0 ? (
         <div className="bg-gray-900 rounded-lg p-12 border border-gray-800 text-center">
           <p className="text-gray-400">No jobs in queue</p>
@@ -151,6 +263,24 @@ export const RenderQueue: FC = () => {
               className="bg-gray-900 rounded-lg p-4 border border-gray-800 flex items-start justify-between"
             >
               <div className="flex items-start gap-4 flex-1 min-w-0">
+                {canCompare(job) && (
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(job.id)}
+                    disabled={
+                      selectedIds.length >= 2 &&
+                      !selectedIds.includes(job.id)
+                    }
+                    onChange={() => toggleSelect(job)}
+                    title={
+                      selectedIds.length >= 2 &&
+                      !selectedIds.includes(job.id)
+                        ? 'Only 2 jobs can be compared — untick one first'
+                        : 'Tick to compare with another job'
+                    }
+                    className="mt-1.5 w-4 h-4 accent-indigo-500 cursor-pointer disabled:cursor-not-allowed"
+                  />
+                )}
                 <div className="mt-1">{getStatusIcon(job.status)}</div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white font-medium">
@@ -222,6 +352,75 @@ export const RenderQueue: FC = () => {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {compare && (
+        <div
+          ref={compareRef}
+          className="bg-gray-900 rounded-lg p-4 border border-gray-800"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-white font-medium">Frame Compare</h2>
+              {compare.result && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Same moment in both videos —{' '}
+                  {compare.result.timeSeconds.toFixed(2)}s (half the shorter
+                  clip)
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setCompare(null)}
+              className="p-2 hover:bg-gray-800 rounded transition-colors"
+              title="Close compare"
+            >
+              <X size={18} className="text-gray-400" />
+            </button>
+          </div>
+          {compare.loading && (
+            <p className="text-sm text-blue-300 mt-4">
+              Extracting frames…
+            </p>
+          )}
+          {compare.error && (
+            <p className="text-sm text-red-400 mt-4">{compare.error}</p>
+          )}
+          {compare.result && (
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              {(
+                [
+                  {
+                    label: compare.firstLabel,
+                    frame: compare.result.firstFrame,
+                    w: compare.result.firstWidth,
+                    h: compare.result.firstHeight,
+                  },
+                  {
+                    label: compare.secondLabel,
+                    frame: compare.result.secondFrame,
+                    w: compare.result.secondWidth,
+                    h: compare.result.secondHeight,
+                  },
+                ] as const
+              ).map((side) => (
+                <div key={side.frame}>
+                  <p className="text-sm text-gray-300 font-medium break-all">
+                    {side.label}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {side.w}×{side.h}
+                  </p>
+                  <img
+                    src={toFileUrl(side.frame)}
+                    alt={side.label}
+                    className="mt-2 w-full rounded border border-gray-700"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

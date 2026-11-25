@@ -158,6 +158,25 @@ source (never overwrites an existing file — the same
   (ticking every second, ETA from progress) while processing;
   "Took MM:SS · Finished HH:MM:SS" when done.
 
+## Frame Compare in the Render Queue (added 2026-11-25, v0.4.3)
+
+- Finished jobs that produced a video file (.mp4/.webm/.mov)
+  get a checkbox on the left of the row. Tick any two jobs —
+  the third box is disabled while two are ticked — and a bar
+  appears above the list with a Compare button. Clicking it
+  extracts the frame at the SAME timestamp from both outputs
+  (half the shorter clip's duration, so the moment exists in
+  both) and shows the two frames side by side in a preview
+  panel BELOW the queue list, each labelled with the job kind
+  + output file name and its dimensions. The extraction is
+  frame-accurate (short-window decode, same trick as the last
+  frame extractor) — a plain keyframe seek could land each
+  video on a different moment. Frames are saved into a
+  "frame compare" folder next to the first video
+  (`<base>_compare_A.png` / `<base>_compare_B.png`), so a
+  repeat compare overwrites the same files. The panel closes
+  itself if either compared job is removed or cleared.
+
 ## System Monitor (added 2026-11-23)
 
 - A compact live panel pinned to the bottom of the left
@@ -663,3 +682,15 @@ from `media:duration` (`getMediaDuration`), because
   Lanczos 2k + Light sharpen and Upscale None + Light
   sharpen on real clips (see the v0.4.2 test log in the
   commit).
+  v0.4.3: Frame Compare in the Render Queue (Hung asked
+  25/11/2026: tick 2 queues to compare). Completed jobs with
+  a video output get a checkbox; ticking two enables a
+  Compare button that extracts the same-timestamp frame
+  (half the shorter clip) from both outputs and previews
+  them side by side below the queue list, labelled by job
+  kind + output file name with dimensions. Extraction is
+  frame-accurate via a short-window decode. Verified on this
+  VM: two-tone clips (red 0–1s, blue after) — both frames
+  came back blue at t=1.21s, proving the seek lands on the
+  moment, not on a keyframe at 0s; sizes reported and saved
+  correctly; missing file errors cleanly.

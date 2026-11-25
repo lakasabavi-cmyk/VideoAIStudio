@@ -212,6 +212,29 @@ export interface FrameExtractRequest {
   rangeStartSeconds: number
 }
 
+/** Frame compare (Render Queue, v0.4.3): same-timestamp frame from
+ * two videos — the two ticked jobs' outputs. */
+export interface FrameCompareRequest {
+  /** First video (left side). */
+  firstPath: string
+  /** Second video (right side). */
+  secondPath: string
+}
+
+export interface FrameCompareResult {
+  /** Extracted PNG of the first video at timeSeconds. */
+  firstFrame: string
+  /** Extracted PNG of the second video at the same timeSeconds. */
+  secondFrame: string
+  /** Timestamp (seconds) both frames were taken at: half the
+   * shorter video's duration, so the moment exists in both. */
+  timeSeconds: number
+  firstWidth: number
+  firstHeight: number
+  secondWidth: number
+  secondHeight: number
+}
+
 export interface ThumbnailsRequest {
   videoPath: string
   startSeconds: number

@@ -17,6 +17,7 @@ import type {
   ThumbnailsRequest,
   WaveformRequest,
   FrameExtractRequest,
+  FrameCompareRequest,
   TranscribeRequest,
   TranscriptData,
   SubtitleExportRequest,
@@ -88,6 +89,9 @@ export const preload = {
 
   extractFrameAt: (request: FrameExtractRequest) =>
     ipcRenderer.invoke('media:extractFrame', request),
+
+  getFrameCompare: (request: FrameCompareRequest) =>
+    ipcRenderer.invoke('ffmpeg:frameCompare', request),
 
   openFolder: (filePath: string) =>
     ipcRenderer.invoke('shell:openFolder', filePath),

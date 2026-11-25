@@ -18,6 +18,8 @@ import type {
   ThumbnailsRequest,
   WaveformRequest,
   FrameExtractRequest,
+  FrameCompareRequest,
+  FrameCompareResult,
   ProcessResult,
   TranscribeRequest,
   TranscriptLoadResult,
@@ -85,6 +87,12 @@ export interface ElectronAPI {
   extractFrameAt: (request: FrameExtractRequest) => Promise<{
     success: boolean
     data?: string
+    error?: string
+  }>
+  /** Frame compare (v0.4.3): same-timestamp frame from two videos. */
+  getFrameCompare: (request: FrameCompareRequest) => Promise<{
+    success: boolean
+    data?: FrameCompareResult
     error?: string
   }>
   openFolder: (filePath: string) => Promise<{
