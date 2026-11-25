@@ -190,10 +190,11 @@ source (never overwrites an existing file — the same
 
 ## Settings layout (2026-11-23)
 
-- Inside the Upscale card, the RIFE block sits ABOVE the
-  Real-ESRGAN scale/path fields, mirroring the pipeline order
-  (interpolation runs before the upscale). Since v0.4.2 the
-  RIFE and Sharpen blocks apply to both methods, not just
+- Inside the Upscale card, the blocks follow the pipeline
+  order (v0.4.4, Hung asked 25/11/2026): RIFE first, then
+  Upscale (method + target resolution + the ESRGAN-only
+  fields), then Sharpen last. Since v0.4.2 the RIFE and
+  Sharpen blocks apply to both methods, not just
   Real-ESRGAN.
 
 ## Cancel a running job (added 2026-11-23)
@@ -694,3 +695,7 @@ from `media:duration` (`getMediaDuration`), because
   came back blue at t=1.21s, proving the seek lands on the
   moment, not on a keyframe at 0s; sizes reported and saved
   correctly; missing file errors cleanly.
+  v0.4.4: Upscale Settings order follows the pipeline (Hung
+  asked 25/11/2026): RIFE first, then Upscale (method +
+  target resolution + ESRGAN-only fields), then Sharpen
+  last. No behaviour change — same settings, same jobs.
