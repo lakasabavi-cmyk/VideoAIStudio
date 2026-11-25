@@ -222,7 +222,20 @@ export function enqueueUpscale(
 ): string | null {
   const settings = useSettingsStore.getState()
   const wantRife = settings.rifeEnabled || forceRife
-  if (settings.upscaleMethod === 'realesrgan' || forceRife) {
+  // RIFE runs before the upscale on BOTH methods (v0.4.2: original
+  // -> RIFE -> Lanczos -> sharpen is a real chain now, not just an
+  // ESRGAN one). Validate the path once, up front.
+  const rife = wantRife
+    ? {
+        exePath: settings.rifePath,
+        modelPath: settings.rifeModelPath,
+        multiplier: settings.rifeMultiplier,
+      }
+    : undefined
+  if (wantRife && !settings.rifePath.trim()) {
+    return 'RIFE is enabled but its executable path is not set in Settings.'
+  }
+  if (settings.upscaleMethod === 'realesrgan') {
     if (!settings.esrganPath.trim()) {
       return 'Set the Real-ESRGAN executable path in Settings first.'
     }
@@ -231,16 +244,6 @@ export function enqueueUpscale(
       !settings.esrganCustomModel.trim()
     ) {
       return 'Type the custom ESRGAN model name in Settings first.'
-    }
-    const rife = wantRife
-      ? {
-          exePath: settings.rifePath,
-          modelPath: settings.rifeModelPath,
-          multiplier: settings.rifeMultiplier,
-        }
-      : undefined
-    if (wantRife && !settings.rifePath.trim()) {
-      return 'RIFE is enabled but its executable path is not set in Settings.'
     }
     const resolved = resolveEsrganModel(settings)
     enqueue(
@@ -260,13 +263,35 @@ export function enqueueUpscale(
         },
       })
     )
-  } else {
+  } else if (settings.upscaleMethod === 'lanczos') {
     enqueue(
       baseJob('upscale', video, {
         upscale: {
           method: 'lanczos',
           targetHeight: LANCZOS_TARGETS[settings.lanczosTarget],
-          outputSuffix: `_${settings.lanczosTarget}`,
+          sharpen: settings.esrganSharpen,
+          rife,
+          outputSuffix:
+            `_${settings.lanczosTarget}` +
+            (rife ? `_rife${settings.rifeMultiplier}x` : ''),
+        },
+      })
+    )
+  } else {
+    // Upscale: None — a RIFE and/or sharpen only job. Refuse the
+    // job when nothing is actually selected (it would just copy).
+    if (!wantRife && settings.esrganSharpen === 'off') {
+      return 'Pick at least one: RIFE, an upscale method, or Sharpen.'
+    }
+    enqueue(
+      baseJob('upscale', video, {
+        upscale: {
+          method: 'none',
+          sharpen: settings.esrganSharpen,
+          rife,
+          outputSuffix:
+            (rife ? `_rife${settings.rifeMultiplier}x` : '') +
+            (settings.esrganSharpen !== 'off' ? '_sharp' : ''),
         },
       })
     )

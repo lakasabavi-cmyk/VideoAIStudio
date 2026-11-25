@@ -10,7 +10,7 @@ import { createHash } from 'crypto'
 import type { UpscaleRequest } from '@/types/ipc'
 import { LogService } from './log.service'
 import { SystemService } from './system.service'
-import { verifyFrameDir } from './frameCheck'
+import { verifyFrameDir, readPngDimensions } from './frameCheck'
 
 /**
  * Resolve a bundled binary path.
@@ -1500,11 +1500,35 @@ export class FFmpegService {
   }
 
   /**
-   * Quick upscale with the Lanczos scaler to a target height
-   * (1080p / 2K / 4K / 8K), keeping the aspect ratio. The audio
-   * track is copied unchanged.
+   * Lanczos upscale (v0.4.2): faithful resize with no AI invention.
+   * Chain: original -> RIFE (optional) -> Lanczos -> sharpen
+   * (optional). With neither RIFE nor sharpen it stays the old
+   * single ffmpeg pass (fast, no temp files); with either one it
+   * runs the frame pipeline below — the same stages as
+   * Real-ESRGAN minus the ncnn model — so the face cannot go
+   * plastic.
    */
   static async upscaleLanczos(
+    request: UpscaleRequest,
+    onProgress?: (progress: number, stage?: string) => void
+  ): Promise<void> {
+    const sharpen = request.sharpen ?? 'off'
+    if (!request.rife && sharpen === 'off') {
+      return FFmpegService.upscaleLanczosSinglePass(
+        request.videoPath,
+        request.outputPath,
+        request.targetHeight ?? 1080,
+        onProgress
+      )
+    }
+    return FFmpegService.upscaleFramePipeline(request, onProgress)
+  }
+
+  /**
+   * The original quick Lanczos: one ffmpeg pass, scale + encode,
+   * audio copied. Kept for the plain case (no RIFE, no sharpen).
+   */
+  static async upscaleLanczosSinglePass(
     inputPath: string,
     outputPath: string,
     targetHeight: number,
@@ -1540,6 +1564,345 @@ export class FFmpegService {
         .on('error', reject)
         .run()
     })
+  }
+
+  /**
+   * The shared frame pipeline for the Lanczos and "none"
+   * methods: extract frames, optional RIFE at native size,
+   * upscale stage (Lanczos resize of every frame — or skipped
+   * entirely when the method is 'none', so a job can be RIFE
+   * and/or sharpen only), rebuild with an optional sharpen
+   * pass. Same stage layout, progress ranges and frame
+   * verification as upscaleRealEsrgan; only the upscale stage
+   * differs (ffmpeg scale instead of the ncnn binary), so the
+   * methods cannot drift apart silently. Deliberately separate
+   * from upscaleRealEsrgan: that path is production and must
+   * not change.
+   */
+  static async upscaleFramePipeline(
+    request: UpscaleRequest,
+    onProgress?: (progress: number, stage?: string) => void
+  ): Promise<void> {
+    const targetHeight = request.targetHeight ?? 1080
+    const SHARPEN_FILTERS = {
+      light: 'unsharp=5:5:0.5:5:5:0.0',
+      medium: 'unsharp=5:5:1.0:5:5:0.0',
+      strong: 'unsharp=7:7:1.4:5:5:0.0',
+    } as const
+    const sharpenFilter =
+      request.sharpen && request.sharpen !== 'off'
+        ? SHARPEN_FILTERS[request.sharpen]
+        : null
+
+    // RIFE is optional; validate it up front so the job fails in
+    // seconds, not after the frame extraction.
+    const rife = request.rife
+    let rifeExe = ''
+    let rifeModel = ''
+    let rifeMultiplier = 1
+    if (rife) {
+      rifeExe = rife.exePath?.trim() ?? ''
+      if (!rifeExe || !fs.existsSync(rifeExe)) {
+        throw new Error(
+          'RIFE executable not found. Download rife-ncnn-vulkan ' +
+            '(Windows release), unzip it, and set its path in Settings.'
+        )
+      }
+      rifeModel =
+        rife.modelPath?.trim() ||
+        path.join(path.dirname(rifeExe), 'rife-v4.6')
+      if (!fs.existsSync(rifeModel)) {
+        throw new Error(
+          `RIFE model folder not found: ${rifeModel}. ` +
+            'Check the RIFE model path in Settings.'
+        )
+      }
+      rifeMultiplier = rife.multiplier === 4 ? 4 : 2
+    }
+
+    // A 'none' job with no RIFE and no sharpen would just copy
+    // the clip — refuse it here as well as in the job runner.
+    if (
+      request.method === 'none' &&
+      !rife &&
+      (!request.sharpen || request.sharpen === 'off')
+    ) {
+      throw new Error(
+        'Nothing to do: pick at least one of RIFE, an upscale method, or Sharpen.'
+      )
+    }
+
+    const cancelEpoch = FFmpegService.cancelEpoch
+    const metadata = await FFmpegService.getVideoMetadata(request.videoPath)
+    const fps = metadata.fps > 0 ? metadata.fps : 30
+    const totalFrames = Math.max(1, Math.round(metadata.duration * fps))
+
+    LogService.log(
+      'upscale',
+      `start input=${path.basename(request.videoPath)} ` +
+        `${metadata.width}x${metadata.height} ${metadata.duration.toFixed(1)}s ` +
+        `${request.method === 'none'
+          ? 'upscale=none'
+          : `lanczos target=${targetHeight}`} ` +
+        `sharpen=${request.sharpen ?? 'off'} ` +
+        `rife=${rife ? `${rifeMultiplier}x` : 'off'}`
+    )
+    const statsSampler = setInterval(async () => {
+      try {
+        const s = await SystemService.getStats()
+        LogService.log(
+          'stats',
+          `cpu=${s.cpuPercent}% ram=${s.ramUsedGB.toFixed(1)}/${s.ramTotalGB.toFixed(1)}GB ` +
+            (s.gpu
+              ? `gpu=${s.gpu.utilPercent}% vram=${s.gpu.vramUsedMB}/${s.gpu.vramTotalMB}MB temp=${s.gpu.tempC}C`
+              : 'gpu=n/a') +
+            (s.cpuTempC !== undefined ? ` cpuTemp=${s.cpuTempC}C` : '')
+        )
+      } catch {
+        // Sampling must never break the job.
+      }
+    }, 10000)
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'videoai-lanczos-'))
+    const framesDir = path.join(tmpDir, 'frames')
+    const rifeDir = path.join(tmpDir, 'rife')
+    const upscaledDir = path.join(tmpDir, 'upscaled')
+    fs.mkdirSync(framesDir)
+    fs.mkdirSync(upscaledDir)
+    if (rife) fs.mkdirSync(rifeDir)
+    try {
+      // Stage 1: extract frames as a PNG sequence.
+      const extractEnd = rife ? 8 : 10
+      onProgress?.(0, 'Extract Frames')
+      await new Promise<void>((resolve, reject) => {
+        FFmpegService.trackCommand(ffmpeg(request.videoPath))
+          .outputOptions(['-vsync', '0'])
+          .output(path.join(framesDir, 'frame_%06d.png'))
+          .on('progress', (progress) => {
+            if (progress.frames) {
+              const share =
+                Math.min(progress.frames, totalFrames) / totalFrames
+              onProgress?.(Math.round(share * extractEnd), 'Extract Frames')
+            }
+          })
+          .on('end', () => resolve())
+          .on('error', reject)
+          .run()
+      })
+      const frameCount = fs
+        .readdirSync(framesDir)
+        .filter((f) => f.endsWith('.png')).length
+      if (frameCount === 0) {
+        throw new Error('Frame extraction produced no frames')
+      }
+
+      FFmpegService.throwIfCancelled(cancelEpoch)
+
+      LogService.log(
+        'upscale',
+        `extract done: ${totalFrames} frames ${metadata.width}x${metadata.height}`
+      )
+
+      // Stage 2 (optional): RIFE interpolation at native size.
+      let upscaleInputDir = framesDir
+      let finalFrameCount = frameCount
+      if (rife) {
+        await FFmpegService.runFrameTool({
+          exePath: rifeExe,
+          args: [
+            '-i', framesDir,
+            '-o', rifeDir,
+            '-m', rifeModel,
+            '-n', String(frameCount * rifeMultiplier),
+            '-f', '%08d.png',
+          ],
+          outputDir: rifeDir,
+          expectedFrames: frameCount * rifeMultiplier,
+          rangeStart: extractEnd,
+          rangeEnd: 30,
+          stage: 'RIFE Interpolation',
+          toolName: 'RIFE',
+          onProgress,
+        })
+        upscaleInputDir = rifeDir
+        finalFrameCount = fs
+          .readdirSync(rifeDir)
+          .filter((f) => f.endsWith('.png')).length
+      }
+
+      if (rife) {
+        verifyFrameDir(rifeDir, {
+          expectedCount: frameCount * rifeMultiplier,
+          expectedWidth: metadata.width,
+          expectedHeight: metadata.height,
+          stage: 'RIFE',
+        })
+      }
+
+      FFmpegService.throwIfCancelled(cancelEpoch)
+
+      // Stage 3: the upscale stage — skipped entirely when the
+      // method is 'none' (RIFE / sharpen only). Lanczos resize
+      // of every frame otherwise. No AI — the scaler only
+      // interpolates, it cannot invent detail (or plastic).
+      // The frame pattern is derived from the actual files
+      // (RIFE writes %08d names starting at 0, the extractor
+      // writes frame_%06d starting at 1), so either chain
+      // scales correctly.
+      const skipUpscale = request.method === 'none'
+      const outputFps = fps * rifeMultiplier
+      if (!skipUpscale) {
+      const stageStart = rife ? 30 : 10
+      const lanczosWidth =
+        2 * Math.round((metadata.width * targetHeight) / metadata.height / 2)
+      LogService.log(
+        'upscale',
+        `lanczos start: ${finalFrameCount} frames -> ~${lanczosWidth}x${targetHeight}`
+      )
+      const stageFiles = fs
+        .readdirSync(upscaleInputDir)
+        .filter((f) => f.endsWith('.png'))
+        .sort()
+      const stageFirst = stageFiles[0]
+      const stageDigits = stageFirst.match(/(\d+)\.png$/)
+      const stageDigitWidth = stageDigits ? stageDigits[1].length : 6
+      const stageStartNumber = stageDigits
+        ? parseInt(stageDigits[1], 10)
+        : 1
+      const stagePrefix = stageFirst.slice(
+        0,
+        stageFirst.length - stageDigitWidth - '.png'.length
+      )
+      const stagePattern = path.join(
+        upscaleInputDir,
+        `${stagePrefix}%0${stageDigitWidth}d.png`
+      )
+      const stageOutPattern = path.join(
+        upscaledDir,
+        `${stagePrefix}%0${stageDigitWidth}d.png`
+      )
+      await new Promise<void>((resolve, reject) => {
+        FFmpegService.trackCommand(ffmpeg())
+          .input(stagePattern)
+          .inputOptions([
+            '-framerate', String(outputFps),
+            '-start_number', String(stageStartNumber),
+          ])
+          .videoFilters(`scale=-2:${targetHeight}:flags=lanczos`)
+          .output(stageOutPattern)
+          .on('progress', (progress) => {
+            if (progress.frames) {
+              const share =
+                Math.min(progress.frames, finalFrameCount) / finalFrameCount
+              onProgress?.(
+                Math.round(stageStart + share * (85 - stageStart)),
+                'Lanczos Upscale'
+              )
+            }
+          })
+          .on('end', () => resolve())
+          .on('error', reject)
+          .run()
+      })
+
+      // ffmpeg rounds the -2 width to the nearest even value; read
+      // the actual size back instead of trusting the arithmetic,
+      // then run the usual count + blank checks on it.
+      const outFirst = fs
+        .readdirSync(upscaledDir)
+        .filter((f) => f.endsWith('.png'))
+        .sort()[0]
+      const outDims = readPngDimensions(path.join(upscaledDir, outFirst))
+      if (
+        outDims.height !== targetHeight ||
+        outDims.width % 2 !== 0 ||
+        Math.abs(outDims.width - lanczosWidth) > 2
+      ) {
+        throw new Error(
+          `Lanczos frame size is ${outDims.width}x${outDims.height}, ` +
+            `expected ~${lanczosWidth}x${targetHeight} — scale mismatch?`
+        )
+      }
+      verifyFrameDir(upscaledDir, {
+        expectedCount: finalFrameCount,
+        expectedWidth: outDims.width,
+        expectedHeight: targetHeight,
+        stage: 'Lanczos',
+      })
+      } else {
+        // No upscale stage: the rebuild reads the (possibly
+        // RIFE'd) frames at native size. Verify them the same
+        // way the RIFE stage is verified.
+        verifyFrameDir(upscaleInputDir, {
+          expectedCount: finalFrameCount,
+          expectedWidth: metadata.width,
+          expectedHeight: metadata.height,
+          stage: 'Frames',
+        })
+      }
+
+      FFmpegService.throwIfCancelled(cancelEpoch)
+
+      // Stage 4: rebuild. Same as the Real-ESRGAN path: the frame
+      // pattern is derived from the actual files, the sharpen pass
+      // runs in the encode, and the original audio is stream-copied.
+      // With method 'none' there is no upscaled dir — rebuild
+      // straight from the (possibly RIFE'd) input frames.
+      const rebuildDir = skipUpscale ? upscaleInputDir : upscaledDir
+      onProgress?.(85, 'Rebuild Video')
+      const upscaledFrames = fs
+        .readdirSync(rebuildDir)
+        .filter((f) => f.endsWith('.png'))
+        .sort()
+      const firstFrame = upscaledFrames[0]
+      const digitMatch = firstFrame.match(/(\d+)\.png$/)
+      const digitWidth = digitMatch ? digitMatch[1].length : 6
+      const startNumber = digitMatch ? parseInt(digitMatch[1], 10) : 1
+      const prefix = firstFrame.slice(
+        0,
+        firstFrame.length - digitWidth - '.png'.length
+      )
+      const pattern = path.join(
+        rebuildDir,
+        `${prefix}%0${digitWidth}d.png`
+      )
+      await new Promise<void>((resolve, reject) => {
+        const command = FFmpegService.trackCommand(ffmpeg())
+          .input(pattern)
+          .inputOptions([
+            '-framerate', String(outputFps),
+            '-start_number', String(startNumber),
+          ])
+        if (metadata.audioCodec) {
+          command.input(request.videoPath)
+        }
+        command
+          .outputOptions([
+            '-map', '0:v',
+            ...(metadata.audioCodec ? ['-map', '1:a', '-c:a', 'copy'] : []),
+            '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+            '-pix_fmt', 'yuv420p',
+            ...(sharpenFilter ? ['-vf', sharpenFilter] : []),
+            '-r', String(outputFps),
+          ])
+          .output(request.outputPath)
+          .on('progress', (progress) => {
+            if (progress.frames) {
+              const share =
+                Math.min(progress.frames, finalFrameCount) / finalFrameCount
+              onProgress?.(85 + Math.round(share * 15), 'Rebuild Video')
+            }
+          })
+          .on('end', () => resolve())
+          .on('error', reject)
+          .run()
+      })
+      onProgress?.(100, 'Rebuild Video')
+      LogService.log('upscale', `done -> ${request.outputPath}`)
+    } finally {
+      clearInterval(statsSampler)
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
   }
 
   /**

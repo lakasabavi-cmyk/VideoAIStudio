@@ -48,7 +48,7 @@ export interface MergeVideosRequest {
 export interface UpscaleRequest {
   videoPath: string
   outputPath: string
-  method: 'lanczos' | 'realesrgan'
+  method: 'none' | 'lanczos' | 'realesrgan'
   /** Lanczos: target height in pixels (1080, 1440, 2160, 4320). */
   targetHeight?: number
   /** Real-ESRGAN: scale factor and model name for the ncnn binary. */

@@ -37,8 +37,11 @@ export interface ProjectSettings {
   originalVolume: number
   exportFormat: 'mp4' | 'webm' | 'mov'
   exportQuality: 'low' | 'medium' | 'high'
-  /** Upscale method: quick Lanczos scaling or Real-ESRGAN. */
-  upscaleMethod: 'lanczos' | 'realesrgan'
+  /** Upscale method: none (RIFE / sharpen only), faithful Lanczos
+   * resize, or Real-ESRGAN. Lanczos runs the frame pipeline (with
+   * RIFE / sharpen) when either is on, otherwise a single fast
+   * pass. */
+  upscaleMethod: 'none' | 'lanczos' | 'realesrgan'
   /** Lanczos target resolution (output height follows the label). */
   lanczosTarget: '1080p' | '2k' | '4k' | '8k'
   /** Real-ESRGAN scale factor; the model follows from it. */
@@ -109,7 +112,7 @@ export interface RenderJobParams {
   inputPaths?: string[]
   /** Upscale job snapshot (settings are copied at enqueue time). */
   upscale?: {
-    method: 'lanczos' | 'realesrgan'
+    method: 'none' | 'lanczos' | 'realesrgan'
     targetHeight?: number
     scale?: number
     model?: string

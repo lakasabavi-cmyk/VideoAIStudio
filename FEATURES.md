@@ -61,14 +61,26 @@ from memory.
 
 ## Upscale (added 2026-11-23)
 
-Two methods, chosen in Settings; the Dashboard Upscale button
-runs a job with the saved options. Output names:
+Three pickers in Settings, one job from the Dashboard Upscale
+button. Each axis is independent — pick at least one of the
+three, or the job is refused with a message. Output names:
 `name_1080p.mp4` / `name_2k.mp4` / `name_4k.mp4` / `name_8k.mp4`
-for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
+for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN;
+a RIFE run adds a `_rife2x` / `_rife4x` suffix to either, a
+sharpen-only run adds `_sharp`.
 
-- **Lanczos (quick)**: one ffmpeg pass, `scale` filter with
-  Lanczos to the target height (1080 / 1440 / 2160 / 4320),
-  aspect ratio kept, audio copied.
+- **Upscale: None / Lanczos / ESRGAN.** None means no resize —
+  only RIFE and/or Sharpen run (a RIFE-only or sharpen-only
+  job).
+- **Lanczos (faithful, no AI)**: with neither RIFE nor sharpen
+  it is one ffmpeg pass, `scale` filter with Lanczos to the
+  target height (1080 / 1440 / 2160 / 4320), aspect ratio kept,
+  audio copied. With RIFE or sharpen it runs the frame
+  pipeline instead — Extract Frames → RIFE (optional) →
+  Lanczos resize of every frame → Rebuild Video with the
+  sharpen pass — the same stages as Real-ESRGAN minus the
+  ncnn model, so nothing is invented and the face cannot go
+  plastic. Chain: original -> RIFE -> Lanczos -> sharpen.
 - **Real-ESRGAN**: uses the realesrgan-ncnn-vulkan EXECUTABLE
   (path set in Settings), never the ffmpeg scaler. Pipeline:
   Extract Frames (PNG sequence) → Upscale (ncnn-vulkan;
@@ -76,7 +88,7 @@ for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
   Rebuild Video (ffmpeg at the original fps, original audio
   re-attached by stream copy). The Render Queue shows the
   current stage and overall progress across the stages.
-- **RIFE (optional, integrated into the Real-ESRGAN pipeline)**:
+- **RIFE (optional, integrated into both pipelines)**:
   rife-ncnn-vulkan executable (path in Settings, model folder
   default `rife-v4.6` next to it). When enabled it runs at the
   ORIGINAL resolution between Extract Frames and Upscale —
@@ -86,6 +98,11 @@ for Lanczos, `name_2x.mp4` / `name_4x.mp4` for Real-ESRGAN.
   48 fps at 2x); output name gains a `_rife2x` / `_rife4x`
   suffix. Queue stages: Extract Frames → RIFE Interpolation →
   Upscale → Rebuild Video.
+- **Sharpen (optional, both methods)**: an unsharp pass in the
+  rebuild encode (None / Light / Medium / Strong, Light is the
+  default) — it brings back edge detail the upscale softened:
+  the plastic look on ESRGAN, the softness of a plain Lanczos
+  resize.
 - Both ncnn tools need a Vulkan GPU on the user's machine; if
   the executable or model is missing the job fails immediately
   with a message saying what to set in Settings.
@@ -156,7 +173,9 @@ source (never overwrites an existing file — the same
 
 - Inside the Upscale card, the RIFE block sits ABOVE the
   Real-ESRGAN scale/path fields, mirroring the pipeline order
-  (interpolation runs before the upscale).
+  (interpolation runs before the upscale). Since v0.4.2 the
+  RIFE and Sharpen blocks apply to both methods, not just
+  Real-ESRGAN.
 
 ## Cancel a running job (added 2026-11-23)
 
@@ -623,3 +642,24 @@ from `media:duration` (`getMediaDuration`), because
   2-clip compose, warm-cinematic 70% on clip 2 only —
   output 4.000s, clip 1 bit-exact, clip 2 matches the
   ffmpeg CLI blend reference to 0.1.
+  v0.4.2: Lanczos RIFE + sharpen + three pickers (Hung asked
+  25/11/2026 for the chain original -> RIFE -> Lanczos ->
+  sharpen, then for explicit pickers: RIFE None/2x/4x, Upscale
+  None/Lanczos/ESRGAN, Sharpen None/Light/Medium/Strong).
+  Lanczos is no longer a single pass only: with RIFE or
+  sharpen on it runs the frame pipeline (extract → RIFE at
+  native size → Lanczos resize per frame → rebuild with
+  unsharp), the same stages as Real-ESRGAN minus the ncnn
+  model — nothing is invented, so the face cannot go plastic
+  (ESRGAN 2x and 4x both failed Hung's eye on the hair test
+  clip). Upscale None runs the same pipeline with the resize
+  stage skipped, so a job can be RIFE-only or sharpen-only;
+  a job with all three on None is refused. RIFE and Sharpen
+  in Settings now apply to both methods (they were locked
+  inside the Real-ESRGAN block); the timeline's "RIFE +
+  upscale" action also respects the chosen method instead of
+  forcing ESRGAN. Plain Lanczos (no RIFE, sharpen None) is
+  still the one-pass fast path. Verified on this VM:
+  Lanczos 2k + Light sharpen and Upscale None + Light
+  sharpen on real clips (see the v0.4.2 test log in the
+  commit).

@@ -529,11 +529,14 @@ export function setupFFmpegWorkers() {
             { ...request, outputPath },
             progressFor(event)
           )
+        } else if (request.method === 'none') {
+          await FFmpegService.upscaleFramePipeline(
+            { ...request, outputPath },
+            progressFor(event)
+          )
         } else {
           await FFmpegService.upscaleLanczos(
-            request.videoPath,
-            outputPath,
-            request.targetHeight ?? 1080,
+            { ...request, outputPath },
             progressFor(event)
           )
         }

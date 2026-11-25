@@ -178,32 +178,39 @@ export const Settings: FC = () => {
 
         <div className="bg-gray-900 rounded-lg p-6 border border-gray-800 space-y-4">
           <h2 className="text-xl font-bold text-white">Upscale</h2>
-          <div className="space-y-3">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="radio"
-                name="upscaleMethod"
-                checked={draft.upscaleMethod === 'lanczos'}
-                onChange={() => setDraft({ ...draft, upscaleMethod: 'lanczos' })}
-                className="w-4 h-4"
-              />
-              <span className="text-gray-200">
-                Lanczos (quick) — resize in one ffmpeg pass
-              </span>
-            </label>
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="radio"
-                name="upscaleMethod"
-                checked={draft.upscaleMethod === 'realesrgan'}
-                onChange={() => setDraft({ ...draft, upscaleMethod: 'realesrgan' })}
-                className="w-4 h-4"
-              />
-              <span className="text-gray-200">
-                Real-ESRGAN — AI upscale via the ncnn-vulkan executable
-                (extract frames → upscale → rebuild)
-              </span>
-            </label>
+          <div>
+            <label className="text-gray-300 text-sm">Upscale</label>
+            <div className="flex gap-2 mt-2">
+              {(
+                [
+                  { value: 'none', label: 'None' },
+                  { value: 'lanczos', label: 'Lanczos' },
+                  { value: 'realesrgan', label: 'ESRGAN' },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() =>
+                    setDraft({ ...draft, upscaleMethod: option.value })
+                  }
+                  className={
+                    'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
+                    (draft.upscaleMethod === option.value
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
+                  }
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              {draft.upscaleMethod === 'none'
+                ? 'No resize — only RIFE and/or Sharpen run (pick at least one of the three).'
+                : draft.upscaleMethod === 'lanczos'
+                  ? 'Faithful resize, no AI invention — original → RIFE → Lanczos → sharpen.'
+                  : 'AI upscale via the ncnn-vulkan executable (extract frames → upscale → rebuild).'}
+            </p>
           </div>
 
           {draft.upscaleMethod === 'lanczos' && (
@@ -232,52 +239,47 @@ export const Settings: FC = () => {
             </div>
           )}
 
-          {draft.upscaleMethod === 'realesrgan' && (
-            <div className="space-y-4">
+          {/* RIFE + Sharpen apply to both upscale methods (v0.4.2);
+              the ESRGAN-only parts are gated below. */}
+          <div className="space-y-4">
               <div className="space-y-4">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={draft.rifeEnabled}
-                    onChange={(e) =>
-                      setDraft({ ...draft, rifeEnabled: e.target.checked })
-                    }
-                    className="w-4 h-4"
-                  />
-                  <span className="text-gray-200">
-                    RIFE frame interpolation (smoother motion, runs before
-                    the upscale, inside the same job)
-                  </span>
-                </label>
+                <div>
+                  <label className="text-gray-300 text-sm">
+                    RIFE frame interpolation
+                  </label>
+                  <div className="flex gap-2 mt-2">
+                    {([0, 2, 4] as const).map((mult) => (
+                      <button
+                        key={mult}
+                        onClick={() =>
+                          setDraft({
+                            ...draft,
+                            rifeEnabled: mult !== 0,
+                            rifeMultiplier: mult === 4 ? 4 : 2,
+                          })
+                        }
+                        className={
+                          'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
+                          ((mult === 0
+                            ? !draft.rifeEnabled
+                            : draft.rifeEnabled &&
+                              draft.rifeMultiplier === mult)
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
+                        }
+                      >
+                        {mult === 0 ? 'None' : `${mult}x fps`}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Smoother motion — runs before the upscale, inside
+                    the same job. A 24 fps clip becomes 48 fps at 2x;
+                    the output name gets a _rife2x suffix.
+                  </p>
+                </div>
                 {draft.rifeEnabled && (
                   <>
-                    <div>
-                      <label className="text-gray-300 text-sm">
-                        Frame-rate multiplier
-                      </label>
-                      <div className="flex gap-2 mt-2">
-                        {([2, 4] as const).map((mult) => (
-                          <button
-                            key={mult}
-                            onClick={() =>
-                              setDraft({ ...draft, rifeMultiplier: mult })
-                            }
-                            className={
-                              'px-3 py-1.5 rounded-lg text-sm transition-colors ' +
-                              (draft.rifeMultiplier === mult
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-gray-800 text-gray-300 hover:bg-gray-700')
-                            }
-                          >
-                            {mult}x fps
-                          </button>
-                        ))}
-                      </div>
-                      <p className="text-xs text-gray-500 mt-2">
-                        A 24 fps clip becomes 48 fps at 2x. Saved as
-                        name_4x_rife2x.mp4.
-                      </p>
-                    </div>
                     <div>
                       <label className="text-gray-300 text-sm">
                         RIFE executable (rife-ncnn-vulkan.exe)
@@ -310,6 +312,8 @@ export const Settings: FC = () => {
                   </>
                 )}
               </div>
+              {draft.upscaleMethod === 'realesrgan' && (
+                <div className="space-y-4">
               <div className="border-t border-gray-800 pt-4">
                 <label className="text-gray-300 text-sm">ESRGAN model</label>
                 <select
@@ -424,6 +428,8 @@ export const Settings: FC = () => {
                   </div>
                 )}
               </div>
+                </div>
+              )}
               <div>
                 <label className="text-gray-300 text-sm">
                   Sharpen after upscale
@@ -431,7 +437,7 @@ export const Settings: FC = () => {
                 <div className="flex gap-2 mt-2">
                   {(
                     [
-                      { value: 'off', label: 'Off' },
+                      { value: 'off', label: 'None' },
                       { value: 'light', label: 'Light' },
                       { value: 'medium', label: 'Medium' },
                       { value: 'strong', label: 'Strong' },
@@ -454,13 +460,16 @@ export const Settings: FC = () => {
                   ))}
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
-                  A sharpen pass while the upscaled frames are rebuilt
-                  into video — it brings back edge detail the light
-                  video models smooth away (the plastic look). Light
-                  is a gentle default; raise it only if the picture
-                  still looks waxy.
+                  A sharpen pass while the frames are rebuilt into
+                  video — it brings back edge detail the upscale
+                  softened: the plastic look on ESRGAN, the softness
+                  of a plain Lanczos resize. Light is a gentle
+                  default; raise it only if the picture still looks
+                  waxy.
                 </p>
               </div>
+              {draft.upscaleMethod === 'realesrgan' && (
+                <div className="space-y-4">
               <div>
                 <label className="text-gray-300 text-sm">
                   Tile size (memory control)
@@ -525,10 +534,9 @@ export const Settings: FC = () => {
                   className="w-full mt-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-200 text-sm"
                 />
               </div>
-
-
-            </div>
-          )}
+                </div>
+              )}
+          </div>
         </div>
 
         <div className="bg-gray-900 rounded-lg p-6 space-y-4">
