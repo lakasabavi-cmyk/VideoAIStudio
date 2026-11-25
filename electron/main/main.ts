@@ -14,7 +14,6 @@ import {
 } from './mediaProtocol'
 import { setupFFmpegWorkers } from '../../backend/workers/ffmpeg.worker'
 import { LogService } from '../../backend/services/log.service'
-import { FFmpegService } from '../../backend/services'
 import path from 'path'
 // (no fileURLToPath shim: the main bundle is CommonJS — see
 // build:electron in package.json — so __dirname is available
@@ -123,11 +122,6 @@ app.on('ready', () => {
   )
   registerMediaProtocol()
   createWindow()
-  // "Robot hút rác" (v0.4.5): sweep orphaned temp dirs left by
-  // crashed runs (a crash skips every pipeline's `finally`
-  // cleanup). Runs after the window opens so it never delays
-  // startup; it only touches this app's own temp prefixes.
-  FFmpegService.cleanupStaleTemp()
 })
 
 app.on('window-all-closed', () => {

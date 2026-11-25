@@ -177,23 +177,6 @@ source (never overwrites an existing file — the same
   repeat compare overwrites the same files. The panel closes
   itself if either compared job is removed or cleared.
 
-## Temp cleanup on startup — "robot hút rác" (added 2026-11-25, v0.4.5)
-
-- Every pipeline already deletes its own temp dir in a
-  `finally`, but a crash, a force-quit or a full-machine
-  shutdown skips the `finally` — the 23/11 shutdown during a
-  long chained upscale is the known case — and each orphaned
-  upscale dir holds hundreds of frames (hundreds of MB at 2x,
-  GBs at 4x). Once per launch, after the window opens,
-  `FFmpegService.cleanupStaleTemp()` sweeps the OS temp folder
-  for this app's own prefixes only (`videoai-lanczos-`,
-  `videoai-esrgan-`, `videoai-frame-` dirs,
-  `videoai-karaoke-` / `videoai-cut-` files). Entries modified
-  in the last 10 minutes are left alone in case a second
-  instance is mid-job. The sweep never throws and logs one
-  line (`cleanup` scope) with the count and freed MB when it
-  removed anything.
-
 ## System Monitor (added 2026-11-23)
 
 - A compact live panel pinned to the bottom of the left
@@ -716,11 +699,3 @@ from `media:duration` (`getMediaDuration`), because
   asked 25/11/2026): RIFE first, then Upscale (method +
   target resolution + ESRGAN-only fields), then Sharpen
   last. No behaviour change — same settings, same jobs.
-  v0.4.5: "Robot hút rác" — startup sweep of orphaned temp
-  dirs (Hung: making a video leaves too much junk, 25/11/2026).
-  Pipelines already clean up in `finally`, but a crash or a
-  full-machine shutdown skips it; once per launch the app
-  deletes stale `videoai-*` temp dirs/files older than 10
-  minutes and logs the count + freed MB. Verified on this VM:
-  5 stale entries (incl. a 1.5 MB dir tree) removed, fresh
-  entries and unrelated files kept, second sweep a no-op.
