@@ -99,6 +99,32 @@ export function enqueueBurnSubtitles(video: VideoFile) {
   enqueue(baseJob('burn-subtitles', video, undefined))
 }
 
+/**
+ * Color Grade (v0.4.0): auto brightness balance + LUT overlay.
+ * The panel passes the choices; the defaults (balance on,
+ * warm cinematic, 70%) match the plan.
+ */
+export function enqueueColorGrade(
+  video: VideoFile,
+  options: {
+    autoBalance: boolean
+    lut: string
+    customLutPath?: string
+    strength: number
+  }
+) {
+  enqueue(
+    baseJob('color-grade', video, {
+      colorGrade: {
+        autoBalance: options.autoBalance,
+        lut: options.lut,
+        customLutPath: options.customLutPath,
+        strength: Math.max(0, Math.min(100, options.strength)),
+      },
+    })
+  )
+}
+
 export function enqueueRemoveSilence(video: VideoFile) {
   const { silenceThreshold } = useSettingsStore.getState()
   enqueue(baseJob('remove-silence', video, { threshold: silenceThreshold }))
@@ -561,6 +587,18 @@ async function execute(job: RenderJob): Promise<ProcessResult> {
         videoPath: job.inputPath,
         outputPath: withSuffix(job.inputPath, '.karaoke'),
       })
+    case 'color-grade': {
+      const grade = job.params?.colorGrade
+      if (!grade) throw new Error('Missing color grade settings')
+      return api.colorGrade({
+        videoPath: job.inputPath,
+        outputPath: withSuffix(job.inputPath, '.graded'),
+        autoBalance: grade.autoBalance,
+        lut: grade.lut,
+        customLutPath: grade.customLutPath,
+        strength: grade.strength,
+      })
+    }
     case 'export':
       return api.exportVideo({
         videoPath: job.inputPath,

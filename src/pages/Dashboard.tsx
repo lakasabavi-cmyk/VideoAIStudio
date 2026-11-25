@@ -12,14 +12,69 @@ import {
   enqueueAddMusic,
   enqueueExport,
   enqueueUpscale,
+  enqueueColorGrade,
 } from '@/lib/jobRunner'
+import { BUILTIN_LUTS, LUT_CUSTOM, LUT_NONE } from '@/lib/luts'
 import type { VideoFile } from '@/types'
-import { Trash2, VolumeX, Volume2, Music, Download, Image, Scaling } from 'lucide-react'
+import { Trash2, VolumeX, Volume2, Music, Download, Image, Scaling, Palette } from 'lucide-react'
 
 export const Dashboard: FC = () => {
   const { videos, currentVideo, removeVideo, setCurrentVideo } = useVideoStore()
   const { jobs } = useRenderQueue()
   const [actionMessage, setActionMessage] = useState<string | null>(null)
+
+  // Color Grade panel (v0.4.0): one panel for whichever video
+  // the button was pressed on; defaults match the plan
+  // (balance on, warm cinematic, 70%).
+  const [gradeVideo, setGradeVideo] = useState<VideoFile | null>(null)
+  const [gradeAutoBalance, setGradeAutoBalance] = useState(true)
+  const [gradeLut, setGradeLut] = useState('warm-cinematic')
+  const [gradeStrength, setGradeStrength] = useState(70)
+  const [gradeCustomPath, setGradeCustomPath] = useState<string | null>(null)
+  const [gradeCustomName, setGradeCustomName] = useState<string | null>(null)
+
+  const openGradePanel = (video: VideoFile) => {
+    setGradeVideo(video)
+    setGradeAutoBalance(true)
+    setGradeLut('warm-cinematic')
+    setGradeStrength(70)
+    setGradeCustomPath(null)
+    setGradeCustomName(null)
+  }
+
+  const handlePickLutFile = async () => {
+    const result = await window.electronAPI.selectLutFile()
+    if (result.success && result.data) {
+      setGradeCustomPath(result.data.filePath)
+      setGradeCustomName(result.data.fileName)
+    } else if (result.error && result.error !== 'User canceled selection') {
+      setActionMessage(`Could not pick a LUT file: ${result.error}`)
+    }
+  }
+
+  const handleRunGrade = () => {
+    if (!gradeVideo) return
+    if (gradeLut === LUT_CUSTOM && !gradeCustomPath) {
+      setActionMessage('Pick a custom .cube file first.')
+      return
+    }
+    if (gradeLut === LUT_NONE && !gradeAutoBalance) {
+      setActionMessage(
+        'Nothing to grade: turn on Auto Balance or pick a LUT.'
+      )
+      return
+    }
+    enqueueColorGrade(gradeVideo, {
+      autoBalance: gradeAutoBalance,
+      lut: gradeLut,
+      customLutPath: gradeCustomPath ?? undefined,
+      strength: gradeStrength,
+    })
+    setActionMessage(
+      `Color Grade job queued for ${gradeVideo.name} — see Render Queue.`
+    )
+    setGradeVideo(null)
+  }
 
   const handleUpscale = (video: VideoFile) => {
     const error = enqueueUpscale(video)
@@ -86,6 +141,13 @@ export const Dashboard: FC = () => {
         title="Upscale this video (method and options are set in Settings)"
       >
         <Scaling size={16} /> Upscale
+      </button>
+      <button
+        onClick={() => openGradePanel(video)}
+        className="flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-indigo-600 text-gray-200 text-sm rounded-lg transition-colors"
+        title="Color Grade: auto brightness balance + LUT (default warm cinematic 70%)"
+      >
+        <Palette size={16} /> Color Grade
       </button>
       <button
         onClick={() => {
@@ -177,6 +239,85 @@ export const Dashboard: FC = () => {
           <p className="text-sm text-indigo-300 mt-3">{actionMessage}</p>
         )}
       </div>
+
+      {gradeVideo && (
+        <div className="bg-gray-800 rounded-lg p-6 border border-indigo-500">
+          <h2 className="text-xl font-bold text-white mb-1">
+            Color Grade — {gradeVideo.name}
+          </h2>
+          <p className="text-sm text-gray-400 mb-4">
+            Auto balance runs first (only when the clip&apos;s range is
+            actually compressed), then the LUT. Output is saved next to
+            the video as <span className="text-gray-200">.graded.mp4</span>.
+          </p>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <label className="flex items-center gap-2 text-sm text-gray-200">
+              <input
+                type="checkbox"
+                checked={gradeAutoBalance}
+                onChange={(e) => setGradeAutoBalance(e.target.checked)}
+                className="w-4 h-4 accent-indigo-600"
+              />
+              Auto Balance
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-200">
+              LUT
+              <select
+                value={gradeLut}
+                onChange={(e) => setGradeLut(e.target.value)}
+                className="bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg px-2 py-1.5"
+              >
+                <option value={LUT_NONE}>None</option>
+                {BUILTIN_LUTS.map((lut) => (
+                  <option key={lut.id} value={lut.id}>
+                    {lut.label}
+                  </option>
+                ))}
+                <option value={LUT_CUSTOM}>Custom file…</option>
+              </select>
+            </label>
+            {gradeLut === LUT_CUSTOM && (
+              <span className="flex items-center gap-2">
+                <button
+                  onClick={() => void handlePickLutFile()}
+                  className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm rounded-lg transition-colors"
+                >
+                  Choose .cube file…
+                </button>
+                {gradeCustomName && (
+                  <span className="text-sm text-gray-300">{gradeCustomName}</span>
+                )}
+              </span>
+            )}
+            <label className="flex items-center gap-2 text-sm text-gray-200">
+              Strength
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={gradeStrength}
+                onChange={(e) => setGradeStrength(Number(e.target.value))}
+                className="w-40 accent-indigo-600"
+              />
+              <span className="w-10 text-right">{gradeStrength}%</span>
+            </label>
+          </div>
+          <div className="flex items-center gap-2 mt-5">
+            <button
+              onClick={handleRunGrade}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg transition-colors"
+            >
+              Run Color Grade
+            </button>
+            <button
+              onClick={() => setGradeVideo(null)}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm rounded-lg transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       {videos.length > 0 && (
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">

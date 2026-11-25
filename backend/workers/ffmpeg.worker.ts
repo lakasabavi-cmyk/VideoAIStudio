@@ -1,4 +1,5 @@
 import { app, ipcMain, type IpcMainInvokeEvent } from 'electron'
+import fs from 'fs'
 import path from 'path'
 import { shell } from 'electron'
 import {
@@ -32,6 +33,7 @@ import type {
   TranscriptCutsRequest,
   BurnSubtitlesRequest,
   FrameExtractRequest,
+  ColorGradeRequest,
   ProcessResult,
 } from '@/types/ipc'
 
@@ -515,6 +517,59 @@ export function setupFFmpegWorkers() {
             progressFor(event)
           )
         }
+        return done(event, outputPath)
+      } catch (error) {
+        return fail(event, error)
+      }
+    }
+  )
+
+  // Color Grade (v0.4.0): auto brightness balance + LUT
+  ipcMain.handle(
+    'ffmpeg:colorGrade',
+    async (event, request: ColorGradeRequest): Promise<ProcessResult> => {
+      try {
+        const outputPath = uniqueOutputPath(
+          request.outputPath ??
+            path.join(
+              path.parse(request.videoPath).dir,
+              `${path.parse(request.videoPath).name}.graded.mp4`
+            )
+        )
+        // Resolve the LUT to an absolute .cube path. Built-ins
+        // ship in tools/luts/ (asarUnpack, like transcribe.py).
+        let lutPath: string | undefined
+        if (request.lut === 'custom') {
+          lutPath = request.customLutPath?.trim() || undefined
+          if (!lutPath) {
+            throw new Error('Pick a custom .cube file first.')
+          }
+        } else if (request.lut && request.lut !== 'none') {
+          lutPath = path.join(
+            app.getAppPath(),
+            'tools',
+            'luts',
+            `${request.lut}.cube`
+          )
+          if (!fs.existsSync(lutPath)) {
+            throw new Error(`Built-in LUT not found: ${lutPath}`)
+          }
+        }
+        const result = await FFmpegService.colorGrade(
+          {
+            videoPath: request.videoPath,
+            outputPath,
+            autoBalance: request.autoBalance,
+            lutPath,
+            strength: request.strength,
+          },
+          progressFor(event)
+        )
+        LogService.log(
+          'colorgrade',
+          `job done: balance=${result.balanced ? 'applied' : 'skipped'} ` +
+            `black=${result.blackPoint} white=${result.whitePoint}`
+        )
         return done(event, outputPath)
       } catch (error) {
         return fail(event, error)

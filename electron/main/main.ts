@@ -187,6 +187,36 @@ ipcMain.handle('dialog:selectVideo', async () => {
   }
 })
 
+// Single-file picker for a custom .cube LUT (Color Grade panel).
+ipcMain.handle('dialog:selectLut', async () => {
+  if (!mainWindow) {
+    return { success: false, error: 'Main window not found' }
+  }
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select LUT File (.cube)',
+      filters: [
+        { name: 'LUT Files', extensions: ['cube'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    })
+    if (result.canceled) {
+      return { success: false, error: 'User canceled selection' }
+    }
+    const filePath = result.filePaths[0]
+    return {
+      success: true,
+      data: { filePath, fileName: path.basename(filePath) },
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: (error as Error).message,
+    }
+  }
+})
+
 // Multi-file picker for the timeline editor (videos or audio).
 ipcMain.handle(
   'dialog:selectFiles',

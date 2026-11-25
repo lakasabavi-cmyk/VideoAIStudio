@@ -461,6 +461,219 @@ export class FFmpegService {
   }
 
   /**
+   * Measure the clip's brightness range with signalstats: the
+   * 10th percentile of per-frame YMIN (black point) and the
+   * 90th percentile of per-frame YMAX (white point), 0-255.
+   * Percentiles (not the absolute min/max) so a few black or
+   * blown frames cannot skew the measurement. Decodes the
+   * whole clip once — fast, no encode involved.
+   */
+  private static async measureLevels(inputPath: string): Promise<{
+    blackPoint: number
+    whitePoint: number
+  }> {
+    const decoded = await new Promise<{
+      code: number | null
+      stderr: string
+      spawnError?: string
+    }>((resolve) => {
+      const child = spawn(resolveBinaryPath(ffmpegStatic), [
+        '-v', 'info',
+        '-i', inputPath,
+        '-an',
+        '-vf', 'signalstats,metadata=mode=print',
+        '-f', 'null', '-',
+      ], { windowsHide: true })
+      let stderr = ''
+      child.stderr.on('data', (c: Buffer) => {
+        stderr += c.toString()
+      })
+      child.on('error', (err) =>
+        resolve({ code: null, stderr, spawnError: err.message })
+      )
+      child.on('close', (code) => resolve({ code, stderr }))
+    })
+    if (decoded.code !== 0) {
+      throw new Error(
+        `Could not measure brightness levels (ffmpeg exited with code ${decoded.code}). ` +
+          `${decoded.spawnError ?? decoded.stderr.trim().slice(-300)}`
+      )
+    }
+    const mins: number[] = []
+    const maxs: number[] = []
+    for (const line of decoded.stderr.split('\n')) {
+      const minMatch = line.match(/lavfi\.signalstats\.YMIN=(\d+)/)
+      if (minMatch) mins.push(parseInt(minMatch[1], 10))
+      const maxMatch = line.match(/lavfi\.signalstats\.YMAX=(\d+)/)
+      if (maxMatch) maxs.push(parseInt(maxMatch[1], 10))
+    }
+    if (mins.length === 0 || maxs.length === 0) {
+      throw new Error('Could not measure brightness levels (no signalstats data)')
+    }
+    const percentile = (values: number[], p: number): number => {
+      const sorted = [...values].sort((a, b) => a - b)
+      const index = (p / 100) * (sorted.length - 1)
+      const lo = Math.floor(index)
+      const hi = Math.ceil(index)
+      return sorted[lo] + (sorted[hi] - sorted[lo]) * (index - lo)
+    }
+    return {
+      blackPoint: Math.round(percentile(mins, 10)),
+      whitePoint: Math.round(percentile(maxs, 90)),
+    }
+  }
+
+  /**
+   * Color Grade (v0.4.0): auto brightness balance + 3D LUT.
+   *
+   * Balance is a 2-pass mechanism: pass 1 measures the whole
+   * clip's range with signalstats; pass 2 applies ONE fixed
+   * colorlevels for the entire clip. It is applied ONLY when
+   * the measured range is clearly compressed (white point
+   * below 200/255, or blacks washed out above 55) — a clip
+   * with a full range skips balancing and the job log says so.
+   * Never normalize per-frame: that flickers when the scene
+   * changes and pumps noise in the dark.
+   *
+   * The LUT runs AFTER the balance, through lut3d
+   * (interp=tetrahedral). lut3d has no strength parameter in
+   * this ffmpeg build, so strength is a split + blend:
+   * [graded][original]blend=all_opacity=strength — the
+   * graded frame must be the FIRST (top) input, or opacity
+   * 1.0 silently returns the original (verified 25/11/2026).
+   */
+  static async colorGrade(
+    request: {
+      videoPath: string
+      outputPath: string
+      autoBalance: boolean
+      /** Absolute path to a .cube file, or undefined for none. */
+      lutPath?: string
+      /** LUT strength 0-100. */
+      strength: number
+    },
+    onProgress?: (progress: number, stage?: string) => void
+  ): Promise<{
+    balanced: boolean
+    blackPoint: number
+    whitePoint: number
+  }> {
+    const cancelEpoch = FFmpegService.cancelEpoch
+    const metadata = await FFmpegService.getVideoMetadata(request.videoPath)
+    const duration = metadata.duration || 0
+    const strength = Math.max(0, Math.min(100, request.strength))
+    const lutPath = request.lutPath?.trim() || undefined
+    if (lutPath && !fs.existsSync(lutPath)) {
+      throw new Error(`LUT file not found: ${lutPath}`)
+    }
+    const hasLut = Boolean(lutPath) && strength > 0
+
+    // Pass 1: measure the range (only when balance is wanted).
+    let blackPoint = 0
+    let whitePoint = 255
+    let balanced = false
+    if (request.autoBalance) {
+      onProgress?.(2, 'Measure Levels')
+      const levels = await FFmpegService.measureLevels(request.videoPath)
+      blackPoint = levels.blackPoint
+      whitePoint = levels.whitePoint
+      // Clearly compressed range: whites never reach 200, or
+      // blacks never fall below 55 (washed out).
+      balanced = whitePoint < 200 || blackPoint > 55
+      LogService.log(
+        'colorgrade',
+        `levels black=${blackPoint} white=${whitePoint} ` +
+          (balanced
+            ? '-> balance will be applied'
+            : '-> range already sufficient, skipping balance')
+      )
+    }
+
+    if (!balanced && !hasLut) {
+      throw new Error(
+        'Nothing to grade: the brightness range is already sufficient ' +
+          'and no LUT was selected.'
+      )
+    }
+
+    FFmpegService.throwIfCancelled(cancelEpoch)
+
+    // Pass 2: build the filter graph as a list of chains.
+    // Order is fixed: balance FIRST, LUT AFTER.
+    const escapedLut = lutPath
+      ? lutPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "'\\''")
+      : ''
+    const chains: string[] = []
+    if (balanced) {
+      // ffmpeg 7.0.2's colorlevels has no imin/imax shortcuts,
+      // only per-channel rimin/gimin/bimin + rimax/gimax/bimax.
+      const lo = (blackPoint / 255).toFixed(4)
+      const hi = (whitePoint / 255).toFixed(4)
+      chains.push(
+        `[0:v]colorlevels=rimin=${lo}:gimin=${lo}:bimin=${lo}` +
+          `:rimax=${hi}:gimax=${hi}:bimax=${hi}[balanced]`
+      )
+    }
+    const sourceLabel = balanced ? '[balanced]' : '[0:v]'
+    if (hasLut) {
+      chains.push(`${sourceLabel}split[a][b]`)
+      chains.push(
+        `[a]lut3d=file='${escapedLut}':interp=tetrahedral[graded]`
+      )
+      chains.push(
+        `[graded][b]blend=all_mode=normal:all_opacity=${(strength / 100).toFixed(3)},` +
+          `format=yuv420p[outv]`
+      )
+    } else {
+      chains.push(`${sourceLabel}format=yuv420p[outv]`)
+    }
+
+    LogService.log(
+      'colorgrade',
+      `start input=${path.basename(request.videoPath)} ` +
+        `${metadata.width}x${metadata.height} ${duration.toFixed(1)}s ` +
+        `balance=${balanced ? 'yes' : 'no'} ` +
+        `lut=${lutPath ? path.basename(lutPath) : 'none'} ` +
+        `strength=${strength}%`
+    )
+
+    const hasAudio = Boolean(metadata.audioCodec)
+    return new Promise((resolve, reject) => {
+      const command = FFmpegService.trackCommand(ffmpeg(request.videoPath))
+        .complexFilter(chains)
+        .map('[outv]')
+      if (hasAudio) {
+        command.outputOptions(['-map', '0:a', '-c:a', 'copy'])
+      }
+      command
+        .outputOptions([
+          '-c:v', 'libx264', '-preset', 'medium', '-crf', '18',
+          '-pix_fmt', 'yuv420p',
+        ])
+        .output(request.outputPath)
+        .on('progress', (progress) => {
+          if (progress.timemark && duration > 0) {
+            const done = timemarkSeconds(progress.timemark)
+            const percent = Math.round((done / duration) * 100)
+            if (Number.isFinite(percent)) {
+              onProgress?.(
+                Math.min(100, 10 + Math.round(percent * 0.9)),
+                'Color Grade'
+              )
+            }
+          }
+        })
+        .on('end', () => {
+          onProgress?.(100, 'Color Grade')
+          LogService.log('colorgrade', `done -> ${request.outputPath}`)
+          resolve({ balanced, blackPoint, whitePoint })
+        })
+        .on('error', reject)
+        .run()
+    })
+  }
+
+  /**
    * Add background music to video.
    * The music is looped so it covers the whole video, and amix runs
    * with normalize=0 so the original audio keeps its level.

@@ -25,6 +25,7 @@ import type {
   SubtitleExportRequest,
   TranscriptCutsRequest,
   BurnSubtitlesRequest,
+  ColorGradeRequest,
 } from './ipc'
 
 export interface ElectronAPI {
@@ -118,6 +119,13 @@ export interface ElectronAPI {
     request: TranscriptCutsRequest
   ) => Promise<ProcessResult>
   burnSubtitles: (request: BurnSubtitlesRequest) => Promise<ProcessResult>
+  colorGrade: (request: ColorGradeRequest) => Promise<ProcessResult>
+  /** Pick a .cube LUT file (custom LUT for Color Grade). */
+  selectLutFile: () => Promise<{
+    success: boolean
+    data?: { filePath: string; fileName: string }
+    error?: string
+  }>
   openLogFile: () => Promise<{ success: boolean }>
   getSystemStats: () => Promise<SystemStats>
   /** Kill the processes of the currently running job. */

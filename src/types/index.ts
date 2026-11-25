@@ -94,6 +94,7 @@ export type RenderJobKind =
   | 'transcribe'
   | 'transcript-cuts'
   | 'burn-subtitles'
+  | 'color-grade'
 
 export interface RenderJobParams {
   /** Transcribe job snapshot (whisper settings at enqueue time). */
@@ -159,6 +160,16 @@ export interface RenderJobParams {
     originalFadeOutSeconds?: number
   }
   quality?: 'low' | 'medium' | 'high'
+  /** Color Grade job snapshot (v0.4.0). */
+  colorGrade?: {
+    autoBalance: boolean
+    /** Built-in LUT id, 'none', or 'custom'. */
+    lut: string
+    /** Custom .cube path (when lut === 'custom'). */
+    customLutPath?: string
+    /** LUT strength 0-100. */
+    strength: number
+  }
 }
 
 export interface RenderJob {

@@ -272,3 +272,21 @@ export interface BurnSubtitlesRequest {
   videoPath: string
   outputPath: string
 }
+
+/**
+ * Color Grade job (v0.4.0): auto brightness balance (2-pass
+ * signalstats + one fixed colorlevels) + a 3D LUT with
+ * adjustable strength. Output is <name>.graded.mp4.
+ */
+export interface ColorGradeRequest {
+  videoPath: string
+  outputPath: string
+  /** Auto brightness balance (2-pass signalstats + colorlevels). */
+  autoBalance: boolean
+  /** Built-in LUT id (see src/lib/luts.ts), 'none', or 'custom'. */
+  lut: string
+  /** Custom .cube file path (used when lut === 'custom'). */
+  customLutPath?: string
+  /** LUT strength 0-100 (70 = default). */
+  strength: number
+}

@@ -22,6 +22,7 @@ const KIND_LABELS: Record<RenderJobKind, string> = {
   timeline: 'Timeline Thumbnails',
   compose: 'Build Movie',
   export: 'Export',
+  'color-grade': 'Color Grade',
 }
 
 function formatClock(date?: Date): string {

@@ -22,6 +22,7 @@ import type {
   SubtitleExportRequest,
   TranscriptCutsRequest,
   BurnSubtitlesRequest,
+  ColorGradeRequest,
 } from '@/types/ipc'
 
 export const preload = {
@@ -113,6 +114,12 @@ export const preload = {
 
   burnSubtitles: (request: BurnSubtitlesRequest) =>
     ipcRenderer.invoke('transcript:burnSubtitles', request),
+
+  colorGrade: (request: ColorGradeRequest) =>
+    ipcRenderer.invoke('ffmpeg:colorGrade', request),
+
+  selectLutFile: () => ipcRenderer.invoke('dialog:selectLut'),
+
   openLogFile: () => ipcRenderer.invoke('log:openFile'),
 
   getSystemStats: () => ipcRenderer.invoke('system:stats'),
