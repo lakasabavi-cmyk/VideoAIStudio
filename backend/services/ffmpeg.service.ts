@@ -940,6 +940,10 @@ export class FFmpegService {
         offsetSeconds: number
         dropFirstFrame?: boolean
         transition?: string
+        /** Resolved .cube path for this clip's color filter. */
+        lutPath?: string
+        /** Color filter strength 0-100. */
+        filterStrength?: number
       }[]
       audioClips: {
         path: string
@@ -982,6 +986,8 @@ export class FFmpegService {
       start?: number
       end?: number
       transition?: string
+      lutPath?: string
+      filterStrength?: number
     }
     const ordered = request.clips
       .map((clip, index) => ({ clip, index }))
@@ -1008,6 +1014,8 @@ export class FFmpegService {
         start,
         end,
         transition: clip.transition,
+        lutPath: clip.lutPath,
+        filterStrength: clip.filterStrength,
       })
       cursor = Math.max(cursor, clip.offsetSeconds) + (end - start)
     }
@@ -1028,11 +1036,40 @@ export class FFmpegService {
         const meta = metas[i]
         const start = segment.start as number
         const end = segment.end as number
-        filters.push(
-          `[${i}:v]trim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
-            `setpts=PTS-STARTPTS,scale=${target.width}:${target.height},` +
-            `fps=${targetFps},format=yuv420p,setsar=1,settb=AVTB[gv${s}]`
+        // Color filter (v0.4.1): a built-in LUT on this clip only,
+        // same split + blend strength trick as colorGrade — the
+        // graded frame must be the FIRST blend input, or opacity
+        // 1.0 silently returns the original.
+        const strength = Math.max(
+          0,
+          Math.min(100, segment.filterStrength ?? 70)
         )
+        const lutPath = segment.lutPath?.trim() || undefined
+        const hasFilter = Boolean(lutPath) && strength > 0
+        if (hasFilter) {
+          const escaped = (lutPath as string)
+            .replace(/\\/g, '/')
+            .replace(/:/g, '\\:')
+            .replace(/'/g, "'\\''")
+          filters.push(
+            `[${i}:v]trim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
+              `setpts=PTS-STARTPTS,scale=${target.width}:${target.height},` +
+              `fps=${targetFps},format=yuv420p,split[fa${s}][fb${s}]`
+          )
+          filters.push(
+            `[fa${s}]lut3d=file='${escaped}':interp=tetrahedral[fg${s}]`
+          )
+          filters.push(
+            `[fg${s}][fb${s}]blend=all_mode=normal:all_opacity=${(strength / 100).toFixed(3)},` +
+              `setsar=1,settb=AVTB[gv${s}]`
+          )
+        } else {
+          filters.push(
+            `[${i}:v]trim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +
+              `setpts=PTS-STARTPTS,scale=${target.width}:${target.height},` +
+              `fps=${targetFps},format=yuv420p,setsar=1,settb=AVTB[gv${s}]`
+          )
+        }
         if (meta.audioCodec) {
           filters.push(
             `[${i}:a]atrim=start=${start.toFixed(3)}:end=${end.toFixed(3)},` +

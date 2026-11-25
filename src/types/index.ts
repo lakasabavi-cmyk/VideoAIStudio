@@ -139,6 +139,10 @@ export interface RenderJobParams {
       offsetSeconds: number
       dropFirstFrame?: boolean
       transition?: string
+      /** Color filter (built-in LUT id) on this clip, or 'none'. */
+      filter?: string
+      /** Filter strength 0-100. */
+      filterStrength?: number
     }[]
     audioClips: {
       path: string

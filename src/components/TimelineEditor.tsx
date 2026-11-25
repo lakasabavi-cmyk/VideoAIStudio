@@ -24,6 +24,7 @@ import {
   Redo2,
   Waves,
   Ribbon,
+  Palette,
 } from 'lucide-react'
 import {
   useTimelineStore,
@@ -36,8 +37,10 @@ import {
   type TimelineVideoClip,
   type TimelineAudioClip,
   type ClipTransition,
+  type ClipFilter,
   type AudioKind,
 } from '@/stores/timelineStore'
+import { BUILTIN_LUTS } from '@/lib/luts'
 import { useVideoStore } from '@/stores/videoStore'
 import {
   enqueueCompose,
@@ -53,6 +56,39 @@ import { toFileUrl } from '@/lib/files'
 import type { VideoFile } from '@/types'
 
 const VIDEO_EXTS = ['mp4', 'mov', 'mkv', 'avi', 'webm', 'flv', 'wmv']
+
+/** CSS preview of a timeline color filter (v0.4.1). This is a
+ * live approximation of the LUT for the preview only — the
+ * Build Movie render uses the real .cube file. Values lerp
+ * toward neutral by strength, so 0% = no visible change. */
+function previewCssFilter(
+  filter: ClipFilter | undefined,
+  strength: number
+): string {
+  if (!filter || filter === 'none') return 'none'
+  const s = Math.max(0, Math.min(100, strength)) / 100
+  const lerp = (from: number, to: number) => from + (to - from) * s
+  switch (filter) {
+    case 'warm-cinematic':
+      return `sepia(${lerp(0, 0.28).toFixed(2)}) saturate(${lerp(1, 1.18).toFixed(2)}) hue-rotate(${lerp(0, -10).toFixed(0)}deg) contrast(${lerp(1, 1.03).toFixed(2)})`
+    case 'colorful':
+      return `saturate(${lerp(1, 1.4).toFixed(2)}) contrast(${lerp(1, 1.1).toFixed(2)})`
+    case 'clean-natural':
+      return `saturate(${lerp(1, 1.08).toFixed(2)}) contrast(${lerp(1, 1.03).toFixed(2)}) brightness(${lerp(1, 1.02).toFixed(2)})`
+    case 'film-fade':
+      return `sepia(${lerp(0, 0.18).toFixed(2)}) contrast(${lerp(1, 0.9).toFixed(2)}) brightness(${lerp(1, 1.06).toFixed(2)}) saturate(${lerp(1, 0.9).toFixed(2)})`
+    case 'monochrome':
+      return `grayscale(${lerp(0, 1).toFixed(2)})`
+    default:
+      return 'none'
+  }
+}
+
+/** Vietnamese label for a clip filter (None when unset). */
+function filterLabel(filter: ClipFilter | undefined): string {
+  if (!filter || filter === 'none') return 'None'
+  return BUILTIN_LUTS.find((lut) => lut.id === filter)?.label ?? filter
+}
 const AUDIO_EXTS = ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg']
 const LANES: {
   kind: AudioKind
@@ -298,6 +334,7 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [tool, setTool] = useState<ToolKind | null>(null)
   const [transitionMenuOpen, setTransitionMenuOpen] = useState(false)
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false)
   const [toolTrim, setToolTrim] = useState({ start: 0, end: 0 })
   const [toolSplitAt, setToolSplitAt] = useState(0)
   const [toolSegLen, setToolSegLen] = useState(5)
@@ -1002,6 +1039,12 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
               ref={videoRef}
               src={toFileUrl(activeClip.path)}
               className="w-full h-[190px] object-contain bg-black"
+              style={{
+                filter: previewCssFilter(
+                  activeClip.filter,
+                  activeClip.filterStrength ?? 70
+                ),
+              }}
               preload="auto"
               onLoadedMetadata={() => {
                 const v = videoRef.current
@@ -1298,6 +1341,86 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                       <span className="text-gray-500"> · 0.5s</span>
                     </button>
                   ))}
+                </div>
+              </>
+            )}
+          </div>
+          {/* Filter (v0.4.1): a lens-style color filter on the
+              selected clip — same pattern as Transition, rendered
+              by Build Movie from the built-in LUTs. */}
+          <div className="relative">
+            <button
+              disabled={!selectedVideo}
+              onClick={() => setFilterMenuOpen((open) => !open)}
+              className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg text-[10px] transition-colors disabled:opacity-35 ${
+                selectedVideo?.filter && selectedVideo.filter !== 'none'
+                  ? 'bg-amber-600/25 text-amber-200'
+                  : 'text-gray-300 hover:bg-gray-800'
+              }`}
+              title={
+                selectedVideo
+                  ? 'Color filter on this clip (lens-filter style, rendered by Build Movie)'
+                  : 'Select a video clip first'
+              }
+            >
+              <Palette size={16} />
+              {selectedVideo?.filter && selectedVideo.filter !== 'none'
+                ? filterLabel(selectedVideo.filter)
+                : 'Filter'}
+            </button>
+            {filterMenuOpen && selectedVideo && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setFilterMenuOpen(false)}
+                />
+                <div className="absolute left-0 top-full mt-1 z-30 w-44 bg-gray-900 border border-gray-700 rounded-lg shadow-xl py-1">
+                  {(
+                    [
+                      ['none', 'None'],
+                      ...BUILTIN_LUTS.map(
+                        (lut) => [lut.id, lut.label] as [ClipFilter, string]
+                      ),
+                    ] as [ClipFilter, string][]
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      onClick={() => {
+                        store.updateVideoClip(selectedVideo.id, {
+                          filter: value,
+                        })
+                        if (value === 'none') setFilterMenuOpen(false)
+                      }}
+                      className={`block w-full text-left px-3 py-1.5 text-xs transition-colors ${
+                        (selectedVideo.filter ?? 'none') === value
+                          ? 'bg-amber-600/25 text-amber-100'
+                          : 'text-gray-300 hover:bg-gray-800'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  {selectedVideo.filter &&
+                    selectedVideo.filter !== 'none' && (
+                      <label className="flex items-center gap-2 px-3 py-2 text-xs text-gray-300 border-t border-gray-800">
+                        Strength
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={selectedVideo.filterStrength ?? 70}
+                          onChange={(e) =>
+                            store.updateVideoClip(selectedVideo.id, {
+                              filterStrength: parseInt(e.target.value, 10),
+                            })
+                          }
+                          className="flex-1 accent-amber-500"
+                        />
+                        <span className="w-8 text-right font-mono">
+                          {selectedVideo.filterStrength ?? 70}%
+                        </span>
+                      </label>
+                    )}
                 </div>
               </>
             )}
@@ -1686,6 +1809,11 @@ export const TimelineEditor: FC<TimelineEditorProps> = ({ onMessage }) => {
                     {clip.transition && clip.transition !== 'none' && (
                       <span className="text-[9px] bg-fuchsia-600 text-white rounded px-1 shrink-0">
                         {clip.transition}
+                      </span>
+                    )}
+                    {clip.filter && clip.filter !== 'none' && (
+                      <span className="text-[9px] bg-amber-600 text-white rounded px-1 shrink-0">
+                        {filterLabel(clip.filter)}
                       </span>
                     )}
                   </div>

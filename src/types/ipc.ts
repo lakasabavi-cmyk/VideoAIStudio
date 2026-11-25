@@ -167,6 +167,12 @@ export interface ComposeRequest {
     dropFirstFrame?: boolean
     /** Transition into this clip: fade | dissolve | zoom | slide. */
     transition?: string
+    /** Color filter (built-in LUT id) on this clip, or 'none'. */
+    filter?: string
+    /** Filter strength 0-100. */
+    filterStrength?: number
+    /** Resolved .cube path for the filter (main process only). */
+    lutPath?: string
   }[]
   /** Added audio clips at absolute start times, pre-trimmed. */
   audioClips: {

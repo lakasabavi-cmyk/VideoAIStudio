@@ -226,11 +226,14 @@ source (never overwrites an existing file — the same
 - Persisted locally (music file, music volume, original volume,
   quality, output format).
 
-## Timeline Editor (Dashboard, under Current Video)
+## Video Editor (own page since v0.4.1; was Timeline Editor on the Dashboard)
 
 CapCut-style composition, added 2026-11-23 and upgraded twice the
 same day (pro layout, then the tool-bar / waveform / context-menu
-pass). State lives in `src/stores/timelineStore.ts` (zustand
+pass). Since v0.4.1 (2026-11-25) it is its own top-level page
+("Video Editor" in the sidebar, `src/pages/VideoEditor.tsx`) —
+it used to live inside the Dashboard's "Current Video" card.
+State lives in `src/stores/timelineStore.ts` (zustand
 persist, key `videoai-timeline`; older saves are upgraded by
 `normalizeTimeline` on mount). Video clips carry an absolute
 `offset`, a `dropFirstFrame` flag and their source `fps`; audio
@@ -304,6 +307,22 @@ Editor surface:
   clips overlap by 0.5s and the movie gets 0.5s shorter per
   transition; joints without a transition (and gaps) stay hard
   cuts. Clips of 0.55s or shorter cannot take a transition.
+- Color filters (v0.4.1): each video clip can carry one of the
+  five built-in LUTs, like a camera lens filter (icon-bar
+  Filter button, next to Transition; an amber badge shows the
+  filter name on the block). The preview tints live through a
+  CSS approximation of the LUT on the preview player, so the
+  scene under the cursor shows the color at once. Build Movie
+  bakes the real .cube into that clip only (lut3d +
+  split/blend at the clip's strength, default 70% — same
+  strength trick as the Color Grade job, graded frame first).
+  The filter is stored on the clip (`filter` +
+  `filterStrength` in the timeline store, defaulted by
+  `normalizeTimeline`); the compose worker resolves the LUT
+  id to `tools/luts/<id>.cube` before calling
+  `composeTimeline`, exactly like the Color Grade handler.
+  The Dashboard Color Grade job (v0.4.0) is a separate thing —
+  it grades a whole clip as its own job — and is unchanged.
 - Auto Audio Ducking (toolbar toggle): the Music lane is
   sidechain-compressed by the voice — the Voice lane mixed
   with the video clips' own audio — dipping about 12 dB while
@@ -593,3 +612,14 @@ from `media:duration` (`getMediaDuration`), because
   log in the commit): a range-compressed clip gets its
   whites restored, a full-range clip skips the balance and
   only takes the LUT.
+  v0.4.1: Video Editor page + timeline color filters (Hung
+  approved the mechanism 25/11/2026). The timeline is split
+  out of the Dashboard into its own sidebar page (Video
+  Editor); the Dashboard keeps the library and the Color
+  Grade job. Timeline clips can carry a per-clip color
+  filter (the five built-in LUTs + strength, previewed live
+  with a CSS approximation, baked into Build Movie by
+  lut3d + split/blend per clip). Verified on this VM:
+  2-clip compose, warm-cinematic 70% on clip 2 only —
+  output 4.000s, clip 1 bit-exact, clip 2 matches the
+  ffmpeg CLI blend reference to 0.1.

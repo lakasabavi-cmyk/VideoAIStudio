@@ -22,10 +22,25 @@ export interface TimelineVideoClip {
   fps?: number
   /** Transition into this clip from the previous one (0.5s). */
   transition?: ClipTransition
+  /** Color filter on this clip (v0.4.1, lens-filter style:
+   * a built-in LUT applied to this clip only). */
+  filter?: ClipFilter
+  /** Filter strength 0-100 (70 = v0.4.0 default). */
+  filterStrength?: number
 }
 
 /** Simple 0.5s transitions between timeline clips. */
 export type ClipTransition = 'none' | 'fade' | 'dissolve' | 'zoom' | 'slide'
+
+/** Color filters for a timeline clip (v0.4.1): the built-in
+ * LUT ids from tools/luts/, 'none' = no filter. */
+export type ClipFilter =
+  | 'none'
+  | 'warm-cinematic'
+  | 'colorful'
+  | 'clean-natural'
+  | 'film-fade'
+  | 'monochrome'
 
 export interface TimelineAudioClip {
   id: string
@@ -175,9 +190,11 @@ export function normalizeTimeline(state: {
   videoFadeIn: number
   videoFadeOut: number
 } {
-  let videoClips = state.videoClips.map((c) => ({
+  let videoClips: TimelineVideoClip[] = state.videoClips.map((c) => ({
     ...c,
     dropFirstFrame: c.dropFirstFrame ?? false,
+    filter: c.filter ?? 'none',
+    filterStrength: c.filterStrength ?? 70,
     offset: typeof c.offset === 'number' ? c.offset : Number.NaN,
   }))
   if (videoClips.some((c) => !Number.isFinite(c.offset))) {

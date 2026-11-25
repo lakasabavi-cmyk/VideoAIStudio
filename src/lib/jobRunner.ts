@@ -331,6 +331,8 @@ export function enqueueCompose(timeline: {
     offset: number
     dropFirstFrame: boolean
     transition?: string
+    filter?: string
+    filterStrength?: number
   }[]
   audioClips: {
     path: string
@@ -412,6 +414,8 @@ export function enqueueCompose(timeline: {
         offsetSeconds: c.offset,
         dropFirstFrame: c.dropFirstFrame,
         transition: c.transition,
+        filter: c.filter,
+        filterStrength: c.filterStrength,
       })),
       audioClips,
       audioLaneFades,

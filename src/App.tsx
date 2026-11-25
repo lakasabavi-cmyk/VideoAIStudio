@@ -5,6 +5,7 @@ import { Import } from './pages/Import'
 import { RenderQueue } from './pages/RenderQueue'
 import { Settings } from './pages/Settings'
 import { Transcript } from './pages/Transcript'
+import { VideoEditor } from './pages/VideoEditor'
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -13,6 +14,8 @@ export default function App() {
     switch (activeTab) {
       case 'dashboard':
         return <Dashboard />
+      case 'video-editor':
+        return <VideoEditor />
       case 'import':
         return <Import />
       case 'queue':

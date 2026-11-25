@@ -3,7 +3,6 @@ import { useVideoStore } from '@/stores/videoStore'
 import { useTimelineStore } from '@/stores/timelineStore'
 import { useRenderQueue } from '@/stores/renderQueue'
 import { VideoPreview } from '@/components/VideoPreview'
-import { TimelineEditor } from '@/components/TimelineEditor'
 import {
   enqueueRemoveSilence,
   enqueueAdjustVolume,
@@ -234,7 +233,6 @@ export const Dashboard: FC = () => {
             {actionButtons(currentVideo)}
           </div>
         )}
-        <TimelineEditor onMessage={setActionMessage} />
         {actionMessage && (
           <p className="text-sm text-indigo-300 mt-3">{actionMessage}</p>
         )}

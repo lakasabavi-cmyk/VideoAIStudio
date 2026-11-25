@@ -1,5 +1,5 @@
 import { FC } from 'react'
-import { Home, FileVideo, Settings, BarChart3, Subtitles } from 'lucide-react'
+import { Home, FileVideo, Settings, BarChart3, Subtitles, Clapperboard } from 'lucide-react'
 import { SystemMonitor } from './SystemMonitor'
 
 interface SidebarProps {
@@ -10,6 +10,7 @@ interface SidebarProps {
 export const Sidebar: FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
+    { id: 'video-editor', label: 'Video Editor', icon: Clapperboard },
     { id: 'import', label: 'Import', icon: FileVideo },
     { id: 'queue', label: 'Render Queue', icon: BarChart3 },
     { id: 'transcript', label: 'Transcript', icon: Subtitles },

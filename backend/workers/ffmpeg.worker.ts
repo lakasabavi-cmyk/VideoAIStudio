@@ -288,7 +288,27 @@ export function setupFFmpegWorkers() {
     'ffmpeg:compose',
     async (event, request: ComposeRequest): Promise<ProcessResult> => {
       try {
-        await FFmpegService.composeTimeline(request, progressFor(event))
+        // Resolve each clip's color filter to an absolute .cube
+        // path (v0.4.1). Built-ins ship in tools/luts/ (asarUnpack),
+        // same resolution as the Color Grade job.
+        const clips = request.clips.map((clip) => {
+          const filter = (clip.filter ?? 'none').trim()
+          if (!filter || filter === 'none') return clip
+          const lutPath = path.join(
+            app.getAppPath(),
+            'tools',
+            'luts',
+            `${filter}.cube`
+          )
+          if (!fs.existsSync(lutPath)) {
+            throw new Error(`Built-in LUT not found: ${lutPath}`)
+          }
+          return { ...clip, lutPath }
+        })
+        await FFmpegService.composeTimeline(
+          { ...request, clips },
+          progressFor(event)
+        )
         return done(event, request.outputPath)
       } catch (error) {
         return fail(event, error)
